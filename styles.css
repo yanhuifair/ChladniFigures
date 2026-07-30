@@ -407,14 +407,6 @@ canvas {
 .midi-control {
   width: 100%;
   min-width: 0;
-  padding: var(--sp-md);
-  border: 1px solid var(--c-border);
-  background: rgba(
-    0,
-    0,
-    0,
-    0.9,
-  );
   display: grid;
   gap: var(--sp-md);
 }
