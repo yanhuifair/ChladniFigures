@@ -62,7 +62,7 @@ const state = {
   // 物理参数（真实量纲）
   plateCm: 40, // 底板边长（真实物理尺寸，单位 cm）
   plateStiffness: 1, // 底板硬度系数（相对基准 1.0；∝ 杨氏模量 √E）
-  grainMm: 0.3, // 沙粒真实直径（单位 mm）
+  grainMm: 0.5, // 沙粒真实直径（单位 mm）
   grainPx: 1, // 渲染像素尺寸（由 plateCm/grainMm/屏幕比例推导）
   pxPerCm: 15, // 当前屏幕上 1cm 对应的像素数
 
@@ -296,7 +296,7 @@ function loadPreferences() {
               0.05,
               5,
             )
-          : 0.3,
+          : 0.5,
       volGain:
         typeof p.volGain ===
           "number" &&
