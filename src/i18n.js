@@ -48,6 +48,7 @@ const DICT = {
     // 浏览器标签 / 顶栏保存按钮
     "app.title": "Chladni Figures",
     "save.image": "SAVE IMAGE",
+    "btn.fullscreen": "FULLSCREEN",
     // 引导层
     "perm.desc":
       "Real-time audio-driven Chladni figure particle simulation.<br>Listen to music from other apps; the figure morphs live with the song.",
@@ -134,6 +135,7 @@ const DICT = {
   zh: {
     "app.title": "克拉尼图形",
     "save.image": "保存图像",
+    "btn.fullscreen": "全屏",
     "perm.desc":
       "实时音频驱动的克拉尼图形粒子模拟<br>监听电脑上其他软件播放的音乐，图形随歌实时变形",
     "perm.listenSys": "监听电脑播放的音乐",

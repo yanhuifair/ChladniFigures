@@ -41,6 +41,7 @@ const state = {
   plateSize: 0,
   plateX: 0,
   plateY: 0,
+  fullscreen: false, // 全屏模式：隐藏所有 UI，底板铺满窗口
 
   // 模式参数：currentM/N 恒为整数（保证图形中心对称），
   // 切换时用 prev→current 两个整数模式的高度场按 blendT 交叉淡入
@@ -148,19 +149,23 @@ function resize() {
   // 窗口过小放不下 TARGET 时退化为填满可用区（边距 < 160）。
   // 底板尺寸必须整数：离屏缓冲 createImageData 向下取整，而粒子写入
   // 以 plateSize 作行跨距；小数会导致跨距与实际行宽不符（对角亮线 stride bug）。
-  const TARGET = 160; // 目标边距（尽量 160）
+  const TARGET = state.fullscreen
+    ? 0 // 全屏：无边距，底板铺满窗口
+    : 160; // 目标边距（尽量 160）
   const MIN_PLATE = 64; // 底板最小边长保护
   const bar =
     document.getElementById(
       "bottomBar",
     );
   const barH =
-    bar
-      ? Math.ceil(
-          bar.getBoundingClientRect()
-            .height,
-        )
-      : 0;
+    state.fullscreen
+      ? 0
+      : bar
+        ? Math.ceil(
+            bar.getBoundingClientRect()
+              .height,
+          )
+        : 0;
   const availW =
     state.W;
   const availH =
@@ -209,6 +214,25 @@ function resize() {
   );
   particles.reset();
   state.patternDirty = true;
+}
+
+// --- 全屏模式：隐藏所有 UI，底板铺满整个窗口 ---
+function setFullscreen(
+  on,
+) {
+  state.fullscreen = !!on;
+  document.body.classList.toggle(
+    "fullscreen",
+    state.fullscreen,
+  );
+  // 隐藏/恢复 UI 后底栏高度变化，resize() 会自动按新可用区重算底板；
+  // 这里显式调一次，保证进入全屏瞬间底板立即铺满，无需等下一帧。
+  resize();
+}
+function toggleFullscreen() {
+  setFullscreen(
+    !state.fullscreen,
+  );
 }
 
 // --- 偏好持久化 ---
@@ -1443,6 +1467,37 @@ function init() {
       saveSnapshot,
     );
   }
+
+  // 顶部中间「全屏」按钮：隐藏所有 UI，底板铺满窗口；ESC 退出
+  const fullscreenBtn =
+    document.getElementById(
+      "fullscreenBtn",
+    );
+  if (
+    fullscreenBtn
+  ) {
+    fullscreenBtn.addEventListener(
+      "click",
+      toggleFullscreen,
+    );
+  }
+  window.addEventListener(
+    "keydown",
+    (
+      e,
+    ) => {
+      if (
+        e.key ===
+          "Escape" &&
+        state.fullscreen
+      ) {
+        // 退出全屏：恢复所有 UI，底板回到带边距的常规布局
+        setFullscreen(
+          false,
+        );
+      }
+    },
+  );
 
   // 用户在浏览器上点了"停止共享" → 回到 SIM 并提示
   engine.onSysEnded = () => {

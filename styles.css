@@ -534,6 +534,45 @@ canvas {
   color: #000;
 }
 
+/* --- 顶部中间：全屏按钮 --- */
+.fullscreen-btn {
+  position: fixed;
+  top: var(--ui-edge);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  height: 24px;
+  line-height: 24px;
+  padding: 0 var(--sp-md);
+  border: 1px solid var(--c-border);
+  background: #000;
+  color: var(--c-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.fullscreen-btn:hover {
+  background: #111;
+  color: #ccc;
+}
+.fullscreen-btn:active {
+  background: var(--c-active);
+  color: #000;
+}
+
+/* 全屏模式：隐藏所有界面元素，仅留底板与沙粒 */
+body.fullscreen .bottom-bar,
+body.fullscreen .title-bar,
+body.fullscreen .save-btn,
+body.fullscreen .fullscreen-btn {
+  display: none;
+}
+
 /* --- 引导层 --- */
 .permission-overlay {
   position: fixed;
