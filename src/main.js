@@ -1488,6 +1488,13 @@ function init() {
     (
       e,
     ) => {
+      // 修饰键（Ctrl/Cmd/Alt）不拦截，避免与浏览器快捷键冲突
+      if (
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey
+      )
+        return;
       if (
         e.key ===
           "Escape" &&
@@ -1496,6 +1503,17 @@ function init() {
         // 退出全屏：恢复所有 UI，底板回到带边距的常规布局
         setFullscreen(
           false,
+        );
+      } else if (
+        (e.key ===
+           "f" ||
+         e.key ===
+           "F") &&
+        !state.fullscreen
+      ) {
+        // 进入全屏：隐藏所有 UI，底板铺满整个窗口
+        setFullscreen(
+          true,
         );
       }
     },
