@@ -17,6 +17,9 @@ const COLLIDE_STIFF = 0.5;   // 单次迭代解开重叠的比例（0~1，越大
 const COLLIDE_OFFS = [
   [0, 0], [1, 0], [1, -1], [0, -1], [-1, -1],
 ];
+// 密度统计半径倍数：以略大于碰撞半径的邻域计近邻数（碰撞后颗粒基本不重叠，
+// 直接数"重叠"会漏掉紧贴的邻居；放大到 ~1.8× 才能捕捉到堆积密度）
+const COLLIDE_DENS_MULT = 1.8;
 
 export class ParticleSystem {
   constructor(
@@ -126,6 +129,8 @@ export class ParticleSystem {
       p.sizeF *
       p.sizeF *
       p.sizeF;
+    // 堆叠密度：每帧由碰撞阶段重新统计近邻数（0 = 孤立）
+    p.density = 0;
     return p;
   }
 
@@ -488,14 +493,15 @@ export class ParticleSystem {
     )
       buckets[k].length = 0;
     // 入桶：坐标 [-1,1] → 网格下标（越界夹回，防止极端弹跳溢出）
-    for (
-      let i = 0;
-      i < n;
-      i++
-    ) {
-      const p =
-        ps[i];
-      let gx = ((
+      for (
+        let i = 0;
+        i < n;
+        i++
+      ) {
+        const p =
+          ps[i];
+        p.density = 0;
+        let gx = ((
         p.x +
         1
       ) /
@@ -687,6 +693,125 @@ export class ParticleSystem {
                   corr *
                   wy;
               }
+            }
+          }
+        }
+      }
+    }
+    // 堆叠密度统计：在碰撞半径的略大邻域内数近邻数（每对只数一次），
+    // 作为"堆积密度"指标交给渲染端，使密集堆积的沙粒更亮、更大、更实，强化沙堆观感。
+    // 碰撞后颗粒基本不重叠，直接数"重叠"会漏掉紧贴的邻居；
+    // 故把统计半径放大到 ~COLLIDE_DENS_MULT×，才能捕捉到真实的堆积密度。
+    const densR =
+      COLLIDE_R *
+      COLLIDE_DENS_MULT;
+    for (
+      let gy = 0;
+      gy < cols;
+      gy++
+    ) {
+      for (
+        let gx = 0;
+        gx < cols;
+        gx++
+      ) {
+        const cellArr =
+          buckets[
+            gy *
+              cols +
+            gx
+          ];
+        if (
+          cellArr.length ===
+          0
+        )
+          continue;
+        for (
+          let o = 0;
+          o < COLLIDE_OFFS.length;
+          o++
+        ) {
+          const nx =
+            gx +
+            COLLIDE_OFFS[o][0];
+          const ny =
+            gy +
+            COLLIDE_OFFS[o][1];
+          if (
+            nx < 0 ||
+            nx >= cols ||
+            ny < 0 ||
+            ny >= cols
+          )
+            continue;
+          const nbr =
+            buckets[
+              ny *
+                cols +
+              nx
+            ];
+          if (
+            nbr.length ===
+            0
+          )
+            continue;
+          const sameCell =
+            COLLIDE_OFFS[o][0] ===
+              0 &&
+            COLLIDE_OFFS[o][1] ===
+              0;
+          for (
+            let a = 0;
+            a < cellArr.length;
+            a++
+          ) {
+            const i =
+              cellArr[a];
+            const pi =
+              ps[i];
+            const ri =
+              densR *
+              pi.sizeF;
+            for (
+              let b = 0;
+              b < nbr.length;
+              b++
+            ) {
+              const j =
+                nbr[b];
+              if (
+                sameCell &&
+                j <= i
+              )
+                continue;
+              const pj =
+                ps[j];
+              const rj =
+                densR *
+                pj.sizeF;
+              const dx =
+                pi.x -
+                pj.x;
+              const dy =
+                pi.y -
+                pj.y;
+              const minD =
+                ri + rj;
+              const d2 =
+                dx *
+                  dx +
+                dy *
+                  dy;
+              if (
+                d2 >=
+                  minD *
+                    minD
+              )
+                continue;
+              pi.density +=
+                1;
+              pj.density +=
+                1;
             }
           }
         }

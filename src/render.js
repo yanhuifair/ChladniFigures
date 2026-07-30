@@ -647,6 +647,17 @@ export class Renderer {
             110,
         );
 
+      // 堆叠密度归一化：density 为碰撞阶段统计的近邻数（0=孤立），
+      // 约 6 个近邻即视为"紧密堆积"，映射为 0~1 的密度增强因子。
+      const densN =
+        p.density > 0
+          ? Math.min(
+              1,
+              p.density /
+                6,
+            )
+          : 0;
+
       const brightness =
         p.brightness *
         (0.52 +
@@ -656,7 +667,11 @@ export class Renderer {
             0.12) *
         (0.2 +
           edgeMask *
-            0.8);
+            0.8) *
+        // 密集堆积的沙粒更亮（沙堆高光感）
+        (1 +
+          densN *
+            0.5);
       const val =
         Math.floor(
           Math.min(
@@ -675,7 +690,10 @@ export class Renderer {
             settled *
               0.22 +
             movingBoost *
-              0.08,
+              0.08 +
+            // 密集堆积的沙粒更实（不透明）
+            densN *
+              0.18,
         ) *
         edgeMask;
 
@@ -687,11 +705,15 @@ export class Renderer {
       // 严格等比例：不设人为上限（旧 [1,12] clamp 会让大沙粒/小底板时
       // 渲染尺寸封顶，破坏沙粒与底板的物理比例）。
       // GPU 路径用浮点 gf；CPU 路径最小 1px（像素离散化的物理下限）。
+      // 密集堆积的沙粒略大（沙堆体积感）。
       const gf =
         (state.grainPx ||
           1) *
         (p.sizeF ||
-          1);
+          1) *
+        (1 +
+          densN *
+            0.4);
       const g =
         Math.max(
           1,
