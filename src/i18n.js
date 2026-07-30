@@ -58,7 +58,7 @@ const DICT = {
     // 段落标题
     "seg.audioSource": "AUDIO SOURCE",
     "seg.patternParams": "PATTERN PARAMETERS",
-    "seg.info": "INFO",
+    "seg.info": "INFORMATION",
     // 音源按钮
     "src.input": "INPUT",
     "src.output": "OUTPUT",
@@ -74,7 +74,7 @@ const DICT = {
     "param.plateSide": "PLATE SIDE",
     "param.stiffness": "STIFFNESS",
     "param.sandGrain": "SAND GRAIN",
-    "param.volBoost": "VOL BOOST",
+    "param.volBoost": "VOLUME BOOST",
     // 信息段
     "info.source": "SOURCE",
     "info.mode": "MODE",
@@ -84,7 +84,7 @@ const DICT = {
     // 开关
     "label.pattern": "PATTERN",
     "label.particles": "PARTICLES",
-    "label.simSound": "SIM SOUND",
+    "label.simSound": "SIMULATION SOUND",
     "toggle.on": "{label}: ON",
     "toggle.off": "{label}: OFF",
     // MIDI 状态
