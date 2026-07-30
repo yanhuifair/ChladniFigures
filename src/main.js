@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.1.0";
 
 // --- 全局状态 ---
 const state = {
@@ -66,6 +66,7 @@ const state = {
   audioSource: "sim",
   showParticles: true,
   showPattern: false,
+  stack3d: true, // 3D 堆叠（小山丘感）：颗粒在 2D 板上跳动但可沿 z 堆叠成山丘
 
   particleCount: 10000,
 
@@ -1210,6 +1211,9 @@ function animate(
         curN: state.currentN,
         blendT: state.blendT,
         plateLimit: 0.97,
+        stack3d: state.stack3d
+          ? 1
+          : 0,
       },
     );
     gpuParticles.render(
@@ -1498,6 +1502,11 @@ function init() {
       onToggleParticles: () => {
         state.showParticles =
           !state.showParticles;
+        savePreferences();
+      },
+      onToggleStack3d: () => {
+        state.stack3d =
+          !state.stack3d;
         savePreferences();
       },
       onParticleCount: (

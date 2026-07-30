@@ -62,6 +62,8 @@ export function setupUI(
     $("patternToggleBtn");
   const particleToggleBtn =
     $("particleToggleBtn");
+  const stack3dToggleBtn =
+    $("stack3dToggleBtn");
   const simSoundToggleBtn =
     $("simSoundToggleBtn");
   const particleCountSlider =
@@ -295,6 +297,15 @@ export function setupUI(
     () =>
       handlers.onToggleParticles(),
   );
+  if (
+    stack3dToggleBtn
+  ) {
+    stack3dToggleBtn.addEventListener(
+      "click",
+      () =>
+        handlers.onToggleStack3d(),
+    );
+  }
   simSoundToggleBtn.addEventListener(
     "click",
     () =>
@@ -703,6 +714,31 @@ export function setupUI(
           ),
         },
       );
+    if (
+      stack3dToggleBtn
+    ) {
+      stack3dToggleBtn.classList.toggle(
+        "active",
+        state.stack3d,
+      );
+      stack3dToggleBtn.textContent = state.stack3d
+        ? t(
+          "toggle.on",
+          {
+            label: t(
+              "label.stack3d",
+            ),
+          },
+        )
+        : t(
+          "toggle.off",
+          {
+            label: t(
+              "label.stack3d",
+            ),
+          },
+        );
+    }
     simSoundToggleBtn.classList.toggle(
       "active",
       state.simSound,

@@ -26,9 +26,19 @@ const GRID_CELLS =
   GRID_DIM *
   GRID_DIM;
 
+// 3D 堆叠（小山丘感）：颗粒在 2D 板上随频率跳动，但允许沿 z 方向堆叠，
+// 不再在 2D 完全斥开。用逐 cell 的 atomic 高度累加来分配层（layer）。
+const Z_GRAIN = 0.005;          // 每颗沙粒在 z 方向的厚度（plate 单位）
+const Z_SCALE = 4096;           // 定点数缩放：atomic<u32> 不能直接加 f32
+const Z_FIXED = Math.round(Z_GRAIN * Z_SCALE); // 每层累加的定点值
+const Z_MAX_LAYERS = 40;        // 单 cell 最大堆叠层数（防止无限增高）
+const Z_GRAV = 0.5;             // 竖直重力（plate 单位 / s^2）
+const Z_HOP = 0.015;            // 抛起时的初始竖直速度（轻微弹跳）
+const Z_PROJECT = 0.5;          // 渲染时 z→屏幕像素的抬升比例
+
 // 每颗粒子 16 个 float（64 字节），与 WGSL 结构体 P 的自动步长(64)对齐：
 // [0,1]=pos [2,3]=vel [4]=air [5]=airTotal [6]=settled [7]=sizeF
-// [8]=mass [9]=brightness [10]=grip [11]=density [12..15]=pad
+// [8]=mass [9]=brightness [10]=grip [11]=density [12]=z [13]=vz [14,15]=pad
 const FLOATS_PER_PARTICLE = 16;
 
 // --- 共享 WGSL 场函数（被 sim / 碰撞 / 渲染复用）---
@@ -102,8 +112,8 @@ struct P {
   brightness: f32,
   grip: f32,
   density: f32,
-  pad0: f32,
-  pad1: f32,
+  z: f32,    // 堆叠高度（3D 沙丘感）：颗粒在 2D 板上跳动，但可在 z 方向堆叠成小山丘
+  vz: f32,   // 竖直速度
   pad2: f32,
   pad3: f32,
 };
@@ -126,13 +136,30 @@ struct U {
   blendT: f32,
   frame: u32,
   num: u32,
-  pad0: f32,
-  pad1: f32,
+  stack3d: f32,
+  zGrain: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read> inState: array<P>;
 @group(0) @binding(2) var<storage, read_write> outState: array<P>;
+@group(0) @binding(3) var<storage, read_write> pileTop: array<atomic<u32>>;
+
+const Z_GRAIN_F: f32 = ${Z_GRAIN};
+const Z_FIXED_U: u32 = ${Z_FIXED}u;
+const Z_SCALE_F: f32 = ${Z_SCALE}.0;
+const Z_RECIP: f32 = 1.0 / ${Z_SCALE}.0;
+const Z_MAX_LAYERS_U: u32 = ${Z_MAX_LAYERS}u;
+const Z_GRAV_F: f32 = ${Z_GRAV};
+const Z_HOP_F: f32 = ${Z_HOP};
+
+fn cellOf(px: f32, py: f32) -> u32 {
+  var cx = i32(floor((px + 1.0) / (2.0 * ${COLLIDE_CELL})));
+  var cy = i32(floor((py + 1.0) / (2.0 * ${COLLIDE_CELL})));
+  if (cx < 0) { cx = 0; } else if (cx >= i32(${GRID_DIM})) { cx = i32(${GRID_DIM}) - 1; }
+  if (cy < 0) { cy = 0; } else if (cy >= i32(${GRID_DIM})) { cy = i32(${GRID_DIM}) - 1; }
+  return u32(cy) * ${GRID_DIM}u + u32(cx);
+}
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -152,15 +179,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ease = 0.35 + 0.65 * phase;
     p.pos.x = p.pos.x + p.vel.x * dt * ease;
     p.pos.y = p.pos.y + p.vel.y * dt * ease;
+    // 竖直（堆叠）动力学：空中时受重力下落，保持 z 直到着陆认领新层
+    p.vz = p.vz - Z_GRAV_F * dt;
+    p.z = p.z + p.vz * dt;
+    if (p.z < 0.0) { p.z = 0.0; p.vz = 0.0; }
     p.air = p.air - dt;
     if (p.air <= 0.0) {
       p.air = 0.0;
       p.vel = vec2<f32>(0.0, 0.0);
+      p.vz = 0.0;
+      // 着陆：在落点 cell 认领一层（沿 z 堆叠成小山丘）
+      if (u.stack3d > 0.5) {
+        let cell = cellOf(p.pos.x, p.pos.y);
+        let layer = min(atomicAdd(&pileTop[cell], Z_FIXED_U), Z_MAX_LAYERS_U - 1u);
+        p.z = f32(layer) * Z_RECIP + Z_GRAIN_F * 0.5;
+      } else {
+        p.z = 0.0;
+      }
     }
     if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
       p.pos = vec2<f32>((rnd(&seed) * 2.0 - 1.0) * 0.98, (rnd(&seed) * 2.0 - 1.0) * 0.98);
       p.air = 0.0;
       p.vel = vec2<f32>(0.0, 0.0);
+      p.vz = 0.0;
+      p.z = 0.0;
       p.settled = 0.0;
     }
     outState[i] = p;
@@ -213,6 +255,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       p.air = airTime;
       p.airTotal = airTime;
       p.settled = max(p.settled - 0.5, 0.0);
+      // 抛起时释放旧层的堆叠高度（若启用 3D 且确实堆在某一层）
+      if (u.stack3d > 0.5 && p.z > 0.0) {
+        let cell = cellOf(p.pos.x, p.pos.y);
+        atomicSub(&pileTop[cell], Z_FIXED_U);
+      }
+      p.vz = Z_HOP_F;
       outState[i] = p;
       return;
     }
@@ -272,13 +320,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
 const COLLIDE_WGSL = P_STRUCT_WGSL + `
+const Z_GRAIN_F: f32 = ${Z_GRAIN};
 struct CU {
   gridDim: u32,
   K: u32,
   collideR: f32,
   stiff: f32,
   num: u32,
-  pad0: u32,
+  stack3d: f32,
   pad1: u32,
   pad2: u32,
 };
@@ -302,6 +351,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var corry = 0.0;
   var dens = 0.0;
   let ri = c.collideR * inState[i].sizeF;
+  let pz = inState[i].z;
+  let doZ = c.stack3d > 0.5;
   for (var oy = -1; oy <= 1; oy = oy + 1) {
     for (var ox = -1; ox <= 1; ox = ox + 1) {
       let nx = cx + ox;
@@ -313,12 +364,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let j = gridItems[ncell * c.K + s];
         if (j == i) { continue; }
         let pj = inState[j].pos;
+        let qz = inState[j].z;
+        let zOverlap = !doZ || abs(pz - qz) < (Z_GRAIN_F * 0.5);
         let ddx = pi.x - pj.x;
         let ddy = pi.y - pj.y;
         let rj = c.collideR * inState[j].sizeF;
         let minD = ri + rj;
         let d2 = ddx * ddx + ddy * ddy;
-        if (d2 < minD * minD && d2 >= 1e-12) {
+        if (d2 < minD * minD && d2 >= 1e-12 && zOverlap) {
           let d = sqrt(d2);
           let overlap = minD - d;
           let invI = 1.0 / inState[i].mass;
@@ -344,6 +397,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // --- 渲染（实例化四边形）---
 const RENDER_WGSL = FIELD_WGSL + P_STRUCT_WGSL + `
+const Z_GRAIN_F: f32 = ${Z_GRAIN};
+const Z_MAX_LAYERS_F: f32 = ${Z_MAX_LAYERS}.0;
 struct RU {
   W: f32,
   H: f32,
@@ -356,8 +411,8 @@ struct RU {
   curM: f32,
   curN: f32,
   blendT: f32,
-  pad0: f32,
-  pad1: f32,
+  zFactor: f32,
+  zGrain: f32,
   pad2: f32,
   pad3: f32,
 };
@@ -373,9 +428,11 @@ struct VOut {
 @vertex
 fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut {
   let p = parts[ii];
+  let zPix = p.z * ru.plateSize * ru.zFactor;
   let sx = ru.plateX + (p.pos.x * 0.5 + 0.5) * ru.plateSize;
-  let sy = ru.plateY + (p.pos.y * 0.5 + 0.5) * ru.plateSize;
-  let hlen = max(ru.grainPx * p.sizeF, 0.5) * 0.5;
+  let sy = ru.plateY + (p.pos.y * 0.5 + 0.5) * ru.plateSize - zPix;
+  let zN = clamp(p.z / (Z_GRAIN_F * Z_MAX_LAYERS_F), 0.0, 1.0);
+  let hlen = max(ru.grainPx * p.sizeF * (1.0 + zN * 0.25), 0.5) * 0.5;
   var corners = array<vec2<f32>, 6>(
     vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
     vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0)
@@ -393,7 +450,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let nodeAffinity = exp(-h * h * 110.0);
   let densN = min(1.0, p.density / 6.0);
   let alpha = clamp(0.18 + nodeAffinity * 0.62 + p.settled * 0.22, 0.0, 1.0) * (1.0 + densN * 0.18);
-  let bright = p.brightness * (0.5 + nodeAffinity * 0.96) * (1.0 + densN * 0.5);
+  let bright = p.brightness * (0.5 + nodeAffinity * 0.96) * (1.0 + densN * 0.5) * (1.0 + zN * 0.45);
   out.col = vec4<f32>(vec3<f32>(bright), alpha);
   return out;
 }
@@ -488,6 +545,8 @@ function packParticles(
       : 1;
     data[o + 10] = p.grip || 1;
     data[o + 11] = 0; // density
+    data[o + 12] = 0; // z（堆叠高度）
+    data[o + 13] = 0; // vz（竖直速度）
   }
   return data;
 }
@@ -519,6 +578,7 @@ export class WebGPUParticleSystem {
     this.trailSampler = null;
     this.fadePipe = null;
     this.blitPipe = null;
+    this.pileTop = null; // 逐 cell 的堆叠高度累加（atomic<u32> 定点）
 
     const dev = device;
 
@@ -773,6 +833,11 @@ export class WebGPUParticleSystem {
         4,
       STORAGE,
     );
+    this.pileTop = makeBuf(
+      dev,
+      GRID_CELLS * 4,
+      STORAGE | COPY_DST,
+    );
   }
 
   // 生成初始粒子数据（与 particles.js _spawn 一致）
@@ -835,6 +900,14 @@ export class WebGPUParticleSystem {
         data,
       );
     }
+    // 堆叠高度清零（每 cell 当前堆积层数）
+    this.device.queue.writeBuffer(
+      this.pileTop,
+      0,
+      new Uint32Array(
+        GRID_CELLS,
+      ),
+    );
     this.cur = 0;
   }
 
@@ -854,6 +927,7 @@ export class WebGPUParticleSystem {
       b.destroy();
     this.gridCount.destroy();
     this.gridItems.destroy();
+    if (this.pileTop) this.pileTop.destroy();
     const STORAGE = GPUBufferUsage.STORAGE;
     const COPY_DST = GPUBufferUsage.COPY_DST;
     this._allocBuffers(
@@ -994,6 +1068,10 @@ export class WebGPUParticleSystem {
       : 1;
     uI[12] = this.frame >>> 0;
     uI[13] = num >>> 0;
+    uF[14] = params.stack3d != null
+      ? params.stack3d
+      : 0;
+    uF[15] = Z_GRAIN;
     dev.queue.writeBuffer(
       this.uUniform,
       0,
@@ -1014,6 +1092,9 @@ export class WebGPUParticleSystem {
     cF[2] = COLLIDE_R;
     cF[3] = COLLIDE_STIFF;
     cI[4] = num >>> 0;
+    cF[5] = params.stack3d != null
+      ? params.stack3d
+      : 0;
     dev.queue.writeBuffer(
       this.uCollide,
       0,
@@ -1051,6 +1132,12 @@ export class WebGPUParticleSystem {
             binding: 2,
             resource: {
               buffer: this.buffers[n0],
+            },
+          },
+          {
+            binding: 3,
+            resource: {
+              buffer: this.pileTop,
             },
           },
         ],
@@ -1268,6 +1355,8 @@ export class WebGPUParticleSystem {
     rF[10] = state.blendT != null
       ? state.blendT
       : 1;
+    rF[11] = Z_PROJECT;
+    rF[12] = Z_GRAIN;
     dev.queue.writeBuffer(
       this.uRender,
       0,

@@ -86,6 +86,7 @@ const DICT = {
     "label.pattern": "PATTERN",
     "label.particles": "PARTICLES",
     "label.simSound": "SIMULATION SOUND",
+    "label.stack3d": "3D STACK",
     "toggle.on": "{label}: ON",
     "toggle.off": "{label}: OFF",
     // MIDI 状态
@@ -167,6 +168,7 @@ const DICT = {
     "label.pattern": "图案",
     "label.particles": "粒子",
     "label.simSound": "模拟声音",
+    "label.stack3d": "3D 堆叠",
     "toggle.on": "{label}：开",
     "toggle.off": "{label}：关",
     "midi.unavailable": "MIDI 不可用",
