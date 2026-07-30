@@ -52,7 +52,7 @@ const state = {
   selectedMode: "auto",
   audioSource: "sim",
   showParticles: true,
-  showPattern: true,
+  showPattern: false,
 
   particleCount: 10000,
 
@@ -251,7 +251,7 @@ function loadPreferences() {
         typeof p.showPattern ===
         "boolean"
           ? p.showPattern
-          : true,
+          : false,
       particleCount:
         typeof p.particleCount ===
         "number" &&
