@@ -122,10 +122,12 @@ export class Renderer {
     this.plateX = plateX;
     this.plateY = plateY;
 
-    // 克拉尼纹理图（固定 256px，绘制时拉伸到板尺寸）
+    // 克拉尼纹理图：按板实际像素渲染，仅设上限保护超大屏性能。
+    // 旧实现固定 256px 再拉伸到板——全屏板变大时拉伸倍数过高，
+    // 白色节线明显发糊。改为尽量 1:1 贴合板尺寸，全屏节线即清晰。
     const size =
       Math.min(
-        256,
+        1024,
         Math.floor(
           plateSize,
         ),
