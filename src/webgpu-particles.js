@@ -404,6 +404,47 @@ fn fs(in: VOut) -> @location(0) vec4<f32> {
 }
 `;
 
+// --- 残影衰减 / 贴回画布（对应 CPU 路径每帧 data*=0.85/0.92 的拖尾）---
+// 全屏三角形（3 顶点覆盖整个 NDC）
+const FADE_WGSL = `
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+  var p = array<vec2<f32>, 3>(
+    vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0)
+  );
+  return vec4<f32>(p[vi], 0.0, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+}
+`;
+
+const BLIT_WGSL = `
+@group(0) @binding(0) var samp: sampler;
+@group(0) @binding(1) var tex: texture_2d<f32>;
+struct VOut {
+  @builtin(position) pos: vec4<f32>,
+  @location(0) uv: vec2<f32>,
+};
+@vertex
+fn vs(@builtin(vertex_index) vi: u32) -> VOut {
+  var p = array<vec2<f32>, 3>(
+    vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0)
+  );
+  let xy = p[vi];
+  var o: VOut;
+  o.pos = vec4<f32>(xy, 0.0, 1.0);
+  // uv 与渲染朝向一致（NDC.y 向上 → 纹理 v 向下）
+  o.uv = vec2<f32>((xy.x + 1.0) * 0.5, (1.0 - xy.y) * 0.5);
+  return o;
+}
+@fragment
+fn fs(in: VOut) -> @location(0) vec4<f32> {
+  return textureSample(tex, samp, in.uv);
+}
+`;
+
 // 创建 GPUBuffer 的便捷函数
 function makeBuf(
   device,
@@ -472,6 +513,12 @@ export class WebGPUParticleSystem {
     this.frame = 0;
     this.W = canvas.width || 1;
     this.H = canvas.height || 1;
+    // 残影纹理（持久拖尾，对应 CPU 路径的 0.85/0.92 衰减）
+    this.trailTex = null;
+    this.trailView = null;
+    this.trailSampler = null;
+    this.fadePipe = null;
+    this.blitPipe = null;
 
     const dev = device;
 
@@ -590,6 +637,84 @@ export class WebGPUParticleSystem {
                     operation: "add",
                   },
                 },
+              },
+            ],
+          },
+          primitive: {
+            topology: "triangle-list",
+          },
+        },
+      );
+      // 残影衰减管线：用「常数混合因子」把已有内容乘 0.85(RGB)/0.92(Alpha)
+      this.trailSampler = dev.createSampler(
+        {
+          magFilter: "linear",
+          minFilter: "linear",
+        },
+      );
+      this.fadePipe = await dev.createRenderPipelineAsync(
+        {
+          layout: "auto",
+          vertex: {
+            module: dev.createShaderModule(
+              {
+                code: FADE_WGSL,
+              },
+            ),
+            entryPoint: "vs",
+          },
+          fragment: {
+            module: dev.createShaderModule(
+              {
+                code: FADE_WGSL,
+              },
+            ),
+            entryPoint: "fs",
+            targets: [
+              {
+                format: this.format,
+                blend: {
+                  color: {
+                    srcFactor: "zero",
+                    dstFactor: "constant",
+                    operation: "add",
+                  },
+                  alpha: {
+                    srcFactor: "zero",
+                    dstFactor: "constant",
+                    operation: "add",
+                  },
+                },
+              },
+            ],
+          },
+          primitive: {
+            topology: "triangle-list",
+          },
+        },
+      );
+      // 贴回画布管线（直接拷贝残影纹理，保持透明）
+      this.blitPipe = await dev.createRenderPipelineAsync(
+        {
+          layout: "auto",
+          vertex: {
+            module: dev.createShaderModule(
+              {
+                code: BLIT_WGSL,
+              },
+            ),
+            entryPoint: "vs",
+          },
+          fragment: {
+            module: dev.createShaderModule(
+              {
+                code: BLIT_WGSL,
+              },
+            ),
+            entryPoint: "fs",
+            targets: [
+              {
+                format: this.format,
               },
             ],
           },
@@ -743,6 +868,7 @@ export class WebGPUParticleSystem {
     W,
     H,
   ) {
+    const dev = this.device;
     this.W = W;
     this.H = H;
     if (
@@ -768,6 +894,58 @@ export class WebGPUParticleSystem {
       e
     ) {
       /* 尺寸未变时重配置可能抛错，忽略 */
+    }
+    // 持久残影纹理（对应 CPU 路径每帧 data*=0.85/0.92 的拖尾"流动感"）
+    // 交换链纹理无法跨帧 load，故累积到离屏纹理再贴回。
+    if (
+      !this.trailTex ||
+      this.trailTex.width !==
+        W ||
+      this.trailTex.height !==
+        H
+    ) {
+      if (
+        this.trailTex
+      )
+        this.trailTex.destroy();
+      this.trailTex = dev.createTexture(
+        {
+          size: [
+            W,
+            H,
+          ],
+          format: this.format,
+          usage:
+            GPUTextureUsage.RENDER_ATTACHMENT |
+            GPUTextureUsage.TEXTURE_BINDING,
+        },
+      );
+      this.trailView = this.trailTex.createView();
+      // 初始化为透明
+      const c = dev.createCommandEncoder();
+      const p = c.beginRenderPass(
+        {
+          colorAttachments: [
+            {
+              view: this.trailView,
+              loadOp: "clear",
+              clearValue: {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+              },
+              storeOp: "store",
+            },
+          ],
+        },
+      );
+      p.end();
+      dev.queue.submit(
+        [
+          c.finish(),
+        ],
+      );
     }
   }
 
@@ -1064,7 +1242,8 @@ export class WebGPUParticleSystem {
     grainPx,
   ) {
     if (
-      !this.ok
+      !this.ok ||
+      !this.trailView
     )
       return;
     const dev = this.device;
@@ -1095,31 +1274,80 @@ export class WebGPUParticleSystem {
       rBuf,
     );
 
-    const bg = dev.createBindGroup(
+    const enc = dev.createCommandEncoder();
+
+    // 第一遍：累积到持久残影纹理（loadOp load = 保留上一帧内容）
+    const trailPass = enc.beginRenderPass(
       {
-        layout: this.renderPipe.getBindGroupLayout(
-          0,
-        ),
-        entries: [
+        colorAttachments: [
           {
-            binding: 0,
-            resource: {
-              buffer: this.uRender,
-            },
-          },
-          {
-            binding: 1,
-            resource: {
-              buffer: this.buffers[this.cur],
-            },
+            view: this.trailView,
+            loadOp: "load",
+            storeOp: "store",
           },
         ],
       },
     );
+    // 残影衰减：把已有内容乘 0.85(RGB)/0.92(Alpha)，沙粒拖尾渐隐
+    // —— 这正是 CPU 路径"流动感"的来源，GPU 路径此前缺了它，故粒子像瞬闪。
+    trailPass.setPipeline(
+      this.fadePipe,
+    );
+    trailPass.setBlendConstant(
+      [
+        0.85,
+        0.85,
+        0.85,
+        0.92,
+      ],
+    );
+    trailPass.draw(
+      3,
+    );
+    // 绘制本帧沙粒（预乘 alpha over 混合到残影上）
+    if (
+      state.showParticles
+    ) {
+      const bg = dev.createBindGroup(
+        {
+          layout: this.renderPipe.getBindGroupLayout(
+            0,
+          ),
+          entries: [
+            {
+              binding: 0,
+              resource: {
+                buffer: this.uRender,
+              },
+            },
+            {
+              binding: 1,
+              resource: {
+                buffer: this.buffers[
+                  this.cur
+                ],
+              },
+            },
+          ],
+        },
+      );
+      trailPass.setPipeline(
+        this.renderPipe,
+      );
+      trailPass.setBindGroup(
+        0,
+        bg,
+      );
+      trailPass.draw(
+        6,
+        num,
+      );
+    }
+    trailPass.end();
 
-    const enc = dev.createCommandEncoder();
+    // 第二遍：把残影纹理贴回画布（保持透明，露出下层底板）
     const view = this.context.getCurrentTexture().createView();
-    const pass = enc.beginRenderPass(
+    const blitPass = enc.beginRenderPass(
       {
         colorAttachments: [
           {
@@ -1136,23 +1364,34 @@ export class WebGPUParticleSystem {
         ],
       },
     );
-    // 不显示粒子时清空即可
-    if (
-      state.showParticles
-    ) {
-      pass.setPipeline(
-        this.renderPipe,
-      );
-      pass.setBindGroup(
-        0,
-        bg,
-      );
-      pass.draw(
-        6,
-        num,
-      );
-    }
-    pass.end();
+    blitPass.setPipeline(
+      this.blitPipe,
+    );
+    blitPass.setBindGroup(
+      0,
+      dev.createBindGroup(
+        {
+          layout: this.blitPipe.getBindGroupLayout(
+            0,
+          ),
+          entries: [
+            {
+              binding: 0,
+              resource: this.trailSampler,
+            },
+            {
+              binding: 1,
+              resource: this.trailView,
+            },
+          ],
+        },
+      ),
+    );
+    blitPass.draw(
+      3,
+    );
+    blitPass.end();
+
     dev.queue.submit(
       [
         enc.finish(),
