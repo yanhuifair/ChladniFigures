@@ -449,15 +449,24 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let h = blendedHeight(uu, vv, ru.prevM, ru.prevN, ru.curM, ru.curN, ru.blendT);
   let nodeAffinity = exp(-h * h * 110.0);
   let densN = min(1.0, p.density / 6.0);
-  let alpha = clamp(0.18 + nodeAffinity * 0.62 + p.settled * 0.22, 0.0, 1.0) * (1.0 + densN * 0.18);
-  let bright = p.brightness * (0.5 + nodeAffinity * 0.96) * (1.0 + densN * 0.5) * (1.0 + zN * 0.45);
-  out.col = vec4<f32>(vec3<f32>(bright), alpha);
+  // 直 alpha：每颗沙粒的覆盖度，封顶 0.9（不再恒为 1），
+  // 使离板/稀疏处沙粒呈现半透明、有层次，而非一片死白实心。
+  var alpha = clamp(0.15 + nodeAffinity * 0.45 + p.settled * 0.18, 0.0, 0.9) * (1.0 + densN * 0.1);
+  alpha = clamp(alpha, 0.0, 1.0);
+  // 亮度用「加法」合成而非连乘，避免高密度处连乘过冲到纯白；
+  // 封顶 1.0，节线密堆处呈浅灰沙脊、稀疏处呈深灰，整体是有层次的沙色。
+  let lift = nodeAffinity * 0.30 + densN * 0.18 + zN * 0.12;
+  var bright = p.brightness * (0.55 + lift);
+  bright = clamp(bright, 0.0, 1.0);
+  out.col = vec4<f32>(vec3<f32>(bright), alpha); // 直 alpha（非预乘）
   return out;
 }
 
 @fragment
 fn fs(in: VOut) -> @location(0) vec4<f32> {
-  return vec4<f32>(in.col.rgb * in.col.a, in.col.a); // 预乘 alpha
+  // 直 alpha 输出，由 render 管线用「src-alpha / one-minus-src-alpha」
+  // 混合进残影纹理；残影纹理按直 alpha 累积，避免预乘累加过冲变白。
+  return in.col;
 }
 `;
 
@@ -498,7 +507,10 @@ fn vs(@builtin(vertex_index) vi: u32) -> VOut {
 }
 @fragment
 fn fs(in: VOut) -> @location(0) vec4<f32> {
-  return textureSample(tex, samp, in.uv);
+  // 残影纹理按「直 alpha」存储，贴回 premultiplied 画布时需改回预乘：
+  // 输出的 rgb 必须已是乘以 alpha 的预乘值，否则半透明沙粒会被错误提亮。
+  let c = textureSample(tex, samp, in.uv);
+  return vec4<f32>(c.rgb * c.a, c.a);
 }
 `;
 
@@ -687,12 +699,12 @@ export class WebGPUParticleSystem {
                 format: this.format,
                 blend: {
                   color: {
-                    srcFactor: "one",
+                    srcFactor: "src-alpha",
                     dstFactor: "one-minus-src-alpha",
                     operation: "add",
                   },
                   alpha: {
-                    srcFactor: "one",
+                    srcFactor: "src-alpha",
                     dstFactor: "one-minus-src-alpha",
                     operation: "add",
                   },
