@@ -333,6 +333,16 @@ canvas {
 .info > * {
   margin: 0;
 }
+/* 版本号：位于 INFO 板块底部，沿用信息段暗色等宽风格；
+   与上方读数留出稍大间距，但不加分隔线（用户偏好无横线）。 */
+.version-label {
+  margin-top: var(--sp-lg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--c-dim);
+}
 
 .info-meta {
   display: flex;

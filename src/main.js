@@ -34,6 +34,9 @@ import {
   applyStaticI18n,
 } from "./i18n.js";
 
+// 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
+const APP_VERSION = "2.0.0";
+
 // --- 全局状态 ---
 const state = {
   W: 0,
@@ -1278,6 +1281,18 @@ function saveSnapshot() {
 function init() {
   // 依据浏览器语言应用静态文案（HTML 中标注了 data-i18n 的元素）
   applyStaticI18n();
+
+  // INFO 板块底部显示版本号
+  const versionLabel =
+    document.getElementById(
+      "versionLabel",
+    );
+  if (
+    versionLabel
+  )
+    versionLabel.textContent =
+      "VERSIONS " +
+      APP_VERSION;
 
   const saved =
     loadPreferences();
