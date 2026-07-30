@@ -1092,30 +1092,52 @@ function animate(
 }
 
 // --- 保存当前画面为 PNG ---
-// 仅导出可视化本体（克拉尼板 + 沙粒），不含 HTML 界面（标题/底栏/提示）。
+// 只导出底板（正方形克拉尼板 + 沙粒），不导出整窗空白边距，也不含 HTML 界面。
 // 合成顺序：先画 2D 主画布（黑板 + 节线纹理 + CPU 路径沙粒），
 // 再叠加 WebGL 沙粒层（透明背景）。preserveDrawingBuffer 已开启，
 // 故 glCanvas 当前帧可随时被 drawImage 读回。
+// 两路画布都是整窗尺寸，按 (plateX,plateY,plateSize) 裁剪出板区域即可。
 function saveSnapshot() {
   const W =
     state.W;
   const H =
     state.H;
+  const size =
+    state.plateSize > 0
+      ? state.plateSize
+      : Math.min(
+          W,
+          H,
+        );
+  const ox =
+    state.plateSize > 0
+      ? state.plateX
+      : 0;
+  const oy =
+    state.plateSize > 0
+      ? state.plateY
+      : 0;
   const out =
     document.createElement(
       "canvas",
     );
-  out.width = W;
-  out.height = H;
+  out.width = size;
+  out.height = size;
   const octx =
     out.getContext(
       "2d",
     );
-  // 主画布（始终含黑板 + 节线纹理）
+  // 主画布（黑板 + 节线纹理），裁剪到板区域
   octx.drawImage(
     canvas,
+    ox,
+    oy,
+    size,
+    size,
     0,
     0,
+    size,
+    size,
   );
   // WebGL 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复
   if (
@@ -1124,8 +1146,14 @@ function saveSnapshot() {
   ) {
     octx.drawImage(
       glCanvas,
+      ox,
+      oy,
+      size,
+      size,
       0,
       0,
+      size,
+      size,
     );
   }
   // 文件名：模式 + 时间戳
