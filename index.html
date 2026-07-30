@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title data-i18n="app.title">Chladni Figures</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- 引导层（默认不弹出，用户可在面板直接选择音源） -->
+    <div class="permission-overlay hidden" id="permOverlay">
+      <div class="permission-card">
+        <h2>CHLADNI FIGURES</h2>
+        <p data-i18n-html="perm.desc">实时音频驱动的克拉尼图形粒子模拟<br />监听电脑上其他软件播放的音乐，图形随歌实时变形</p>
+        <button id="listenSysBtn" data-i18n="perm.listenSys">监听电脑播放的音乐</button>
+        <button class="demo-link" id="startMicBtn" data-i18n="perm.mic">启用麦克风</button>
+        <button class="demo-link" id="demoBtn" data-i18n="perm.skip">跳过 — 手动模拟模式</button>
+      </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    <!-- WebGL2 粒子层：透明叠加在 #canvas 之上，只画沙粒与残影 -->
+    <canvas id="glcanvas"></canvas>
+
+    <!-- 顶部提示条 -->
+    <div class="toast" id="toast"></div>
+
+    <div class="title-bar">CHLADNI FIGURES BY FAIR</div>
+
+    <!-- 右上角：保存当前图像为 PNG -->
+    <button class="save-btn" id="saveBtn" data-i18n="save.image">SAVE IMAGE</button>
+
+    <!-- 底部 UI：水平三段 -->
+    <div class="bottom-bar" id="bottomBar">
+      <!-- 第一段：声源 -->
+      <section class="segment seg-source">
+        <div class="seg-title" data-i18n="seg.audioSource">AUDIO SOURCE</div>
+        <div class="audio-source">
+          <button class="audio-btn" id="micBtn" data-i18n="src.input">INPUT</button>
+          <button class="audio-btn" id="outputBtn" data-i18n="src.output">OUTPUT</button>
+          <button class="audio-btn active" id="simBtn" data-i18n="src.simulation">SIMULATION</button>
+          <button class="audio-btn" id="midiBtn" data-i18n="src.midi">MIDI</button>
+        </div>
+        <div class="input-device hidden" id="inputDeviceControl">
+          <div class="seg-subtitle" data-i18n="sub.inputDevice">INPUT DEVICE</div>
+          <select class="input-device-select" id="inputDeviceSelect"></select>
+        </div>
+        <div class="input-device hidden" id="outputDeviceControl">
+          <div class="seg-subtitle" data-i18n="sub.outputDevice">OUTPUT DEVICE</div>
+          <select class="input-device-select" id="outputDeviceSelect"></select>
+        </div>
+        <div class="sim-control hidden" id="simControl">
+          <div class="sim-header">
+            <div data-i18n="sub.simInput">SIMULATED INPUT</div>
+            <div class="sim-value" id="simValue">440 Hz</div>
+          </div>
+          <input class="sim-slider" id="simSlider" type="range" min="20" max="20000" step="1" value="440" />
+        </div>
+        <div class="midi-control hidden" id="midiControl">
+          <div class="seg-subtitle" data-i18n="sub.midiInput">MIDI INPUT</div>
+          <div class="midi-status" id="midiStatus">未连接</div>
+        </div>
+      </section>
+
+      <!-- 第二段：pattern 参数调整 -->
+      <section class="segment seg-pattern">
+        <div class="seg-title" data-i18n="seg.patternParams">PATTERN PARAMETERS</div>
+        <div class="particle-toggle">
+          <button class="particle-toggle-btn active" id="patternToggleBtn">PATTERN: ON</button>
+        </div>
+        <div class="particle-toggle">
+          <button class="particle-toggle-btn active" id="particleToggleBtn">PARTICLES: ON</button>
+        </div>
+        <div class="param-grid">
+          <div class="param-cell">
+            <div class="count-row">
+              <span class="count-label" data-i18n="param.sandGrains">SAND GRAINS</span>
+              <span class="count-value" id="particleCountValue">10000</span>
+            </div>
+            <input class="count-slider" id="particleCountSlider" type="range" min="100" max="100000" step="100" value="10000" />
+          </div>
+          <div class="param-cell">
+            <div class="count-row">
+              <span class="count-label" data-i18n="param.plateSide">PLATE SIDE</span>
+              <span class="count-value" id="plateSizeValue">40 cm</span>
+            </div>
+            <input class="count-slider" id="plateSizeSlider" type="range" min="5" max="100" step="1" value="40" />
+          </div>
+          <div class="param-cell">
+            <div class="count-row">
+              <span class="count-label" data-i18n="param.stiffness">STIFFNESS</span>
+              <span class="count-value" id="stiffnessValue">1.0×</span>
+            </div>
+            <input class="count-slider" id="stiffnessSlider" type="range" min="0.2" max="6" step="0.1" value="1" />
+          </div>
+          <div class="param-cell">
+            <div class="count-row">
+              <span class="count-label" data-i18n="param.sandGrain">SAND GRAIN</span>
+              <span class="count-value" id="grainValue">0.30 mm</span>
+            </div>
+            <input class="count-slider" id="grainSlider" type="range" min="0.05" max="5" step="0.05" value="0.3" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 第三段：信息显示 -->
+      <section class="segment seg-info">
+        <div class="seg-title" data-i18n="seg.info">INFO</div>
+        <div class="info" id="info">
+          <div class="info-meta">
+            <div>
+              <span data-i18n="info.source">SOURCE</span>
+              <span id="sourceDisplay">SIMULATION</span>
+            </div>
+            <div>
+              <span data-i18n="info.mode">MODE</span>
+              <span id="modeDisplay">3×4</span>
+            </div>
+          </div>
+          <div class="freq-cap" data-i18n="info.frequency">FREQUENCY</div>
+          <div class="freq" id="freqDisplay">
+            --
+            <span>Hz</span>
+          </div>
+          <div class="vol-meter" id="volMeter">
+            <div class="vol-label-row">
+              <span class="vol-label" data-i18n="info.volume">VOLUME</span>
+              <span class="vol-db" id="volDb">0 dB</span>
+            </div>
+            <div class="vol-bar">
+              <div class="vol-fill" id="volFill"></div>
+            </div>
+            <div class="vol-scale">
+              <span>0</span>
+              <span>120</span>
+            </div>
+          </div>
+          <div class="count-row">
+            <span class="count-label" data-i18n="param.volBoost">VOL BOOST</span>
+            <span class="count-value" id="volGainValue">1.0×</span>
+          </div>
+          <input class="count-slider" id="volGainSlider" type="range" min="0.1" max="10" step="0.1" value="1" />
+          <div class="res-cap" data-i18n="info.resonance">RESONANCE</div>
+          <div class="freq-res" id="resonanceDisplay">--</div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

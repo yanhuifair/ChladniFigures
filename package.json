@@ -1,0 +1,10 @@
+{
+  "name": "chladni-figures",
+  "version": "2.0.0",
+  "description": "Real-time audio-driven Chladni figure particle visualizer",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8765"
+  },
+  "private": true
+}

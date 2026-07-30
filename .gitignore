@@ -1,0 +1,29 @@
+# ---- dependencies ----
+node_modules/
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- logs ----
+*.log
+npm-debug.log*
+
+# ---- local env / secrets ----
+.env
+.env.*
+*.local
+
+# ---- project-private data (memory, preferences, caches) ----
+.workbuddy/
+.codebuddy/
+
+# ---- editor / IDE ----
+.vscode/
+.idea/
+*.swp
+
+# ---- python ----
+__pycache__/
+*.pyc
