@@ -466,6 +466,27 @@ canvas {
   cursor: pointer;
 }
 
+/* SIM 声音开关：仅作为一个普通按钮加到既有排版中，不加边框/框体 */
+.sim-sound-btn {
+  justify-self: start;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--c-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-ui);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sim-sound-btn:hover {
+  color: #aaa;
+}
+.sim-sound-btn.active {
+  color: #fff;
+  font-weight: 700;
+}
+
 /* --- 顶部提示条 --- */
 .toast {
   position: fixed;
