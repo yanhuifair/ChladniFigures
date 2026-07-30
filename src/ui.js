@@ -582,7 +582,7 @@ export function setupUI(
           },
         );
       resonanceDisplay.innerHTML =
-        `${state.currentM}×${state.currentN} · ${Math.round(
+        `${Math.round(
           fRes,
         )} <span>Hz</span>`;
     }
