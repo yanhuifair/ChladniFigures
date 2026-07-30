@@ -49,7 +49,7 @@ const DICT = {
     "app.title": "Chladni Figures",
     "save.image": "SAVE IMAGE",
     "btn.fullscreen": "FULLSCREEN",
-    "btn.fullscreenHint": "Press F to enter fullscreen, ESC to exit",
+    "btn.fullscreenHint": "Press F to toggle fullscreen, ESC to exit",
     // 引导层
     "perm.desc":
       "Real-time audio-driven Chladni figure particle simulation.<br>Listen to music from other apps; the figure morphs live with the song.",
@@ -137,7 +137,7 @@ const DICT = {
     "app.title": "克拉尼图形",
     "save.image": "保存图像",
     "btn.fullscreen": "全屏",
-    "btn.fullscreenHint": "按 F 进入全屏，ESC 退出",
+    "btn.fullscreenHint": "按 F 切换全屏，ESC 退出",
     "perm.desc":
       "实时音频驱动的克拉尼图形粒子模拟<br>监听电脑上其他软件播放的音乐，图形随歌实时变形",
     "perm.listenSys": "监听电脑播放的音乐",

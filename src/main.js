@@ -35,7 +35,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.0.1";
 
 // --- 全局状态 ---
 const state = {
@@ -1520,15 +1520,14 @@ function init() {
           false,
         );
       } else if (
-        (e.key ===
-           "f" ||
-         e.key ===
-           "F") &&
-        !state.fullscreen
+        e.key ===
+          "f" ||
+        e.key ===
+          "F"
       ) {
-        // 进入全屏：隐藏所有 UI，底板铺满整个窗口
+        // F 键切换全屏：未全屏时进入，已全屏时退出
         setFullscreen(
-          true,
+          !state.fullscreen,
         );
       }
     },
