@@ -333,8 +333,8 @@ canvas {
 .info > * {
   margin: 0;
 }
-/* 版本号：位于 INFO 板块底部，沿用信息段暗色等宽风格；
-   与上方读数留出稍大间距，但不加分隔线（用户偏好无横线）。 */
+/* 版本号：位于左上标题（CHLADNI FIGURES BY FAIR）下方，沿用暗色等宽风格；
+   与标题留出稍大间距，但不加分隔线（用户偏好无横线）。 */
 .version-label {
   margin-top: var(--sp-lg);
   font-family: var(--font-mono);
@@ -500,12 +500,15 @@ canvas {
   transform: translateX(-50%) translateY(0);
 }
 
-/* --- 左上标题 --- */
-.title-bar {
+/* --- 左上标题块（标题 + 版本号） --- */
+.title-block {
   position: fixed;
   top: var(--ui-edge);
   left: var(--ui-edge);
   z-index: 10;
+}
+
+.title-bar {
   font-family: var(--font-mono);
   font-size: var(--fs-title);
   color: var(--c-dim);
@@ -576,7 +579,7 @@ canvas {
 
 /* 全屏模式：隐藏所有界面元素，仅留底板与沙粒 */
 body.fullscreen .bottom-bar,
-body.fullscreen .title-bar,
+body.fullscreen .title-block,
 body.fullscreen .save-btn,
 body.fullscreen .fullscreen-btn {
   display: none;
