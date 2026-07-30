@@ -1,6 +1,6 @@
 {
   "name": "chladni-figures",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Real-time audio-driven Chladni figure particle visualizer",
   "type": "module",
   "scripts": {
