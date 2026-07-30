@@ -1,5 +1,7 @@
 # Chladni Figures
 
+![alt text](image/1.png)
+
 Real-time, audio-driven Chladni-figure particle visualizer. Sand particles slide
 along the gradient of a Chladni standing-wave field and settle on the nodal
 lines, while the figure **morphs continuously with whatever you are playing**.
