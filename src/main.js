@@ -342,10 +342,12 @@ function savePreferences() {
             state.simFreq,
           showParticles:
             state.showParticles,
-            showPattern:
-              state.showPattern,
-            particleCount:
-              state.particleCount,
+          showPattern:
+            state.showPattern,
+          simSound:
+            state.simSound,
+          particleCount:
+            state.particleCount,
             plateCm:
               state.plateCm,
             plateStiffness:
