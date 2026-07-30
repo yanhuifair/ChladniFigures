@@ -1,3 +1,6 @@
+// MIT License — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: MIT
+
 // ============================================================
 //  setupUI — UI 控件绑定与状态刷新
 //  通过 handlers 回调把用户操作交回 main；

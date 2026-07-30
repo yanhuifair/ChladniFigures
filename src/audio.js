@@ -1,3 +1,6 @@
+// MIT License — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: MIT
+
 // ============================================================
 //  AudioEngine — 统一音频引擎
 //  音源：mic(系统输入) / output(系统输出) / midi / sim

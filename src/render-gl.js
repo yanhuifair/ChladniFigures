@@ -1,3 +1,6 @@
+// MIT License — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: MIT
+
 // ============================================================
 //  GLParticleRenderer — WebGL2 粒子渲染（方案 A）
 //  用点精灵 (GL_POINTS) 在 GPU 上绘制沙粒，硬边方块；

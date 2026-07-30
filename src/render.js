@@ -1,3 +1,6 @@
+// MIT License — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: MIT
+
 // ============================================================
 //  Renderer — 画布渲染
 //  负责：离屏缓冲、克拉尼纹理图、粒子绘制、音频辉光

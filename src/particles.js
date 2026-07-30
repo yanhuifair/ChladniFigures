@@ -1,3 +1,6 @@
+// MIT License — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: MIT
+
 // ============================================================
 //  ParticleSystem — 沙粒粒子系统（跳-停走动模型）
 //  真实克拉尼沙粒并非连续滑动，而是被震动的板面反复抛起：
