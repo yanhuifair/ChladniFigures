@@ -212,7 +212,9 @@ function resize() {
     state.plateX,
     state.plateY,
   );
-  particles.reset();
+  // 不调用 particles.reset()：粒子坐标为归一化 [-1,1]，渲染器按 plateSize
+  // 自动缩放；尺寸变化只缩放、不重排，因此全屏/窗口缩放只是纯粹放大底板图像，
+  // 不改动任何粒子状态或其他参数。粒子数量变更仍走 setCount()（内部 reset 重建）。
   state.patternDirty = true;
 }
 
