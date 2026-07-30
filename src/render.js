@@ -354,6 +354,18 @@ export class Renderer {
     );
   }
 
+  // 纯黑背景（每帧最先绘制，保证底层始终为黑，露出上方透明 GPU 层）
+  drawBackground() {
+    this.ctx.fillStyle =
+      "#000";
+    this.ctx.fillRect(
+      0,
+      0,
+      this.W,
+      this.H,
+    );
+  }
+
   // 主绘制
   draw(
     state,

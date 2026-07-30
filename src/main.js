@@ -28,6 +28,9 @@ import {
   GLPlateRenderer,
 } from "./render-gl.js";
 import {
+  createWebGPUParticles,
+} from "./webgpu-particles.js";
+import {
   setupUI,
 } from "./ui.js";
 import {
@@ -36,7 +39,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "2.0.0";
 
 // --- 全局状态 ---
 const state = {
@@ -127,9 +130,39 @@ const plateCanvas =
   document.getElementById(
     "platecanvas",
   );
-const glParticles = new GLParticleRenderer(
-  glCanvas,
-);
+// 优先尝试 WebGPU：把整条粒子物理+碰撞搬到 GPU（compute + 原子操作），
+// 同时拿到海量粒子与沙堆带观感。若浏览器不支持/初始化失败，gpuParticles=null，
+// 则退回原 WebGL2+CPU 路径（此时才在 #glcanvas 上创建 WebGL2 上下文）。
+// 注意：同一画布只能持有一种上下文，故 WebGPU 占用 #glcanvas 时不再创建 WebGL2。
+let gpuParticles = null;
+let glParticles = null;
+if (
+  typeof navigator !==
+    "undefined" &&
+  navigator.gpu
+) {
+  try {
+    gpuParticles = await createWebGPUParticles(
+      glCanvas,
+      NUM_PARTICLES,
+    );
+  } catch (
+    e
+  ) {
+    console.warn(
+      "WebGPU 初始化失败，退回 WebGL2+CPU：",
+      e,
+    );
+    gpuParticles = null;
+  }
+}
+if (
+  !gpuParticles
+) {
+  glParticles = new GLParticleRenderer(
+    glCanvas,
+  );
+}
 const glPlate = new GLPlateRenderer(
   plateCanvas,
 );
@@ -225,6 +258,13 @@ function resize() {
     state.plateX,
     state.plateY,
   );
+  if (
+    gpuParticles
+  )
+    gpuParticles.resize(
+      state.W,
+      state.H,
+    );
   // 不调用 particles.reset()：粒子坐标为归一化 [-1,1]，渲染器按 plateSize
   // 自动缩放；尺寸变化只缩放、不重排，因此全屏/窗口缩放只是纯粹放大底板图像，
   // 不改动任何粒子状态或其他参数。粒子数量变更仍走 setCount()（内部 reset 重建）。
@@ -1113,23 +1153,83 @@ function animate(
     particles.setCount(
       pendingParticleCount,
     );
+    // GPU 路径同步重建缓冲（保持与 CPU 系统一致，便于随时回退）
+    if (
+      gpuParticles
+    )
+      gpuParticles.setCount(
+        pendingParticleCount,
+      );
     pendingParticleCount = null;
   }
 
-  particles.update(
-    dt,
-    field,
-  );
-
   // 渲染
+  renderer.drawBackground();
   renderer.maybeUpdatePattern(
     state,
     timestamp,
   );
-  renderer.draw(
-    state,
-    particles.particles,
-  );
+  // 底板：GPU 着色器实时绘制（WebGL2）或 CPU 回退
+  if (
+    renderer.glPlate &&
+    renderer.glPlate.ok
+  ) {
+    renderer.glPlate.render(
+      state,
+      state.plateX,
+      state.plateY,
+      state.plateSize,
+    );
+  } else if (
+    state.showPattern
+  ) {
+    renderer._drawPlate(
+      state,
+    );
+  }
+
+  // 粒子层：优先 WebGPU（GPU 物理 + 碰撞，海量粒子 + 沙堆带），
+  // 否则原 CPU 物理 + WebGL2/CPU 渲染回退路径
+  if (
+    gpuParticles &&
+    gpuParticles.ready
+  ) {
+    gpuParticles.step(
+      dt,
+      {
+        vibration: field.vibration,
+        kick: field.kick,
+        treble: field.treble,
+        vibRate: field.vibRate,
+        motionGain: field.motionGain,
+        prevM: state.prevM,
+        prevN: state.prevN,
+        curM: state.currentM,
+        curN: state.currentN,
+        blendT: state.blendT,
+        plateLimit: 0.97,
+      },
+    );
+    gpuParticles.render(
+      state,
+      state.plateX,
+      state.plateY,
+      state.plateSize,
+      state.grainPx,
+    );
+  } else {
+    particles.update(
+      dt,
+      field,
+    );
+    renderer._drawParticles(
+      state,
+      particles.particles,
+      0,
+      0,
+      state.showParticles,
+    );
+  }
 
   updateDisplayFreq();
   ui.update(
@@ -1206,10 +1306,11 @@ function saveSnapshot() {
       size,
     );
   }
-  // WebGL 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复
+  // WebGL/WebGPU 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复
   if (
-    glParticles &&
-    glParticles.ok
+    (glParticles &&
+      glParticles.ok) ||
+    gpuParticles
   ) {
     octx.drawImage(
       glCanvas,
