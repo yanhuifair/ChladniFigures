@@ -9,6 +9,15 @@
 //  接收 field 提供 psiAt / gradAt / vibration / treble / kick
 // ============================================================
 
+// 颗粒碰撞参数（短程斥力 → 沙粒不可重叠，节线处堆成有宽度的沙带）
+const COLLIDE_R = 0.006;     // 归一化碰撞半径基准（实际半径 = COLLIDE_R * sizeF）
+const COLLIDE_ITER = 2;      // 每帧松弛迭代次数
+const COLLIDE_STIFF = 0.5;   // 单次迭代解开重叠的比例（0~1，越大越快但易抖）
+// 半邻居枚举：自身格(j>i) + 右/右下/下/左下，保证每对相邻只处理一次
+const COLLIDE_OFFS = [
+  [0, 0], [1, 0], [1, -1], [0, -1], [-1, -1],
+];
+
 export class ParticleSystem {
   constructor(
     numParticles = 10000,
@@ -17,6 +26,28 @@ export class ParticleSystem {
     this.particles = [];
     // 离屏累计缓冲交给 Renderer 管理，这里只存粒子状态
     this._scratch = null;
+
+    // 碰撞用均匀网格：cell 取最大可能半径的 2 倍，邻居只需查 3×3
+    this._cell = COLLIDE_R * 1.45 * 2;
+    this._cols = Math.max(
+      1,
+      Math.ceil(
+        2 /
+          this._cell,
+      ),
+    );
+    const cells =
+      this._cols *
+      this._cols;
+    this._buckets = new Array(
+      cells,
+    );
+    for (
+      let k = 0;
+      k < cells;
+      k++
+    )
+      this._buckets[k] = [];
   }
 
   // 重新生成所有粒子
@@ -430,6 +461,261 @@ export class ParticleSystem {
             0,
           );
       }
+    }
+
+    // 颗粒间短程斥力：解开重叠，使沙粒不能占同一点（节线处堆成有宽度的沙带）
+    this._resolveCollisions();
+  }
+
+  // 颗粒间短程斥力（空间网格 + 位置修正）：沙粒不可重叠，节线处自然堆成有宽度的沙带。
+  // 仅做位置修正、不引入速度，避免与现有"抛起/沉降"状态机冲突。
+  _resolveCollisions() {
+    const cols =
+      this._cols;
+    const cell =
+      this._cell;
+    const buckets =
+      this._buckets;
+    const ps =
+      this.particles;
+    const n =
+      ps.length;
+    // 清空桶（复用数组，避免每帧分配）
+    for (
+      let k = 0;
+      k < buckets.length;
+      k++
+    )
+      buckets[k].length = 0;
+    // 入桶：坐标 [-1,1] → 网格下标（越界夹回，防止极端弹跳溢出）
+    for (
+      let i = 0;
+      i < n;
+      i++
+    ) {
+      const p =
+        ps[i];
+      let gx = ((
+        p.x +
+        1
+      ) /
+        cell) |
+        0;
+      let gy = ((
+        p.y +
+        1
+      ) /
+        cell) |
+        0;
+      if (
+        gx < 0
+      )
+        gx = 0;
+      else if (
+        gx >= cols
+      )
+        gx = cols - 1;
+      if (
+        gy < 0
+      )
+        gy = 0;
+      else if (
+        gy >= cols
+      )
+        gy = cols - 1;
+      buckets[
+        gy *
+          cols +
+        gx
+      ].push(
+        i,
+      );
+    }
+    // 松弛迭代：每轮解开一部分重叠，多次迭代收敛更稳
+    for (
+      let it = 0;
+      it < COLLIDE_ITER;
+      it++
+    ) {
+      for (
+        let gy = 0;
+        gy < cols;
+        gy++
+      ) {
+        for (
+          let gx = 0;
+          gx < cols;
+          gx++
+        ) {
+          const cellArr =
+            buckets[
+              gy *
+                cols +
+              gx
+            ];
+          if (
+            cellArr.length ===
+            0
+          )
+            continue;
+          for (
+            let o = 0;
+            o < COLLIDE_OFFS.length;
+            o++
+          ) {
+            const nx =
+              gx +
+              COLLIDE_OFFS[o][0];
+            const ny =
+              gy +
+              COLLIDE_OFFS[o][1];
+            if (
+              nx < 0 ||
+              nx >= cols ||
+              ny < 0 ||
+              ny >= cols
+            )
+              continue;
+            const nbr =
+              buckets[
+                ny *
+                  cols +
+                nx
+              ];
+            if (
+              nbr.length ===
+              0
+            )
+              continue;
+            const sameCell =
+              COLLIDE_OFFS[o][0] ===
+                0 &&
+              COLLIDE_OFFS[o][1] ===
+                0;
+            for (
+              let a = 0;
+              a < cellArr.length;
+              a++
+            ) {
+              const i =
+                cellArr[a];
+              const pi =
+                ps[i];
+              const ri =
+                COLLIDE_R *
+                pi.sizeF;
+              for (
+                let b = 0;
+                b < nbr.length;
+                b++
+              ) {
+                const j =
+                  nbr[b];
+                if (
+                  sameCell &&
+                  j <= i
+                )
+                  continue;
+                const pj =
+                  ps[j];
+                const rj =
+                  COLLIDE_R *
+                  pj.sizeF;
+                let dx =
+                  pi.x -
+                  pj.x;
+                let dy =
+                  pi.y -
+                  pj.y;
+                const minD =
+                  ri + rj;
+                const d2 =
+                  dx *
+                    dx +
+                  dy *
+                    dy;
+                if (
+                  d2 >=
+                    minD *
+                      minD ||
+                  d2 < 1e-12
+                )
+                  continue;
+                const d =
+                  Math.sqrt(
+                    d2,
+                  );
+                const overlap =
+                  minD - d;
+                // 按质量反比分配位移：重的动得少，轻的被挤开更多
+                const invI =
+                  1 /
+                  pi.mass;
+                const invJ =
+                  1 /
+                  pj.mass;
+                const invSum =
+                  invI +
+                  invJ;
+                const corr =
+                  overlap *
+                  COLLIDE_STIFF;
+                const wx =
+                  invI /
+                  invSum;
+                const wy =
+                  invJ /
+                  invSum;
+                const ux =
+                  dx / d;
+                const uy =
+                  dy / d;
+                pi.x +=
+                  ux *
+                  corr *
+                  wx;
+                pi.y +=
+                  uy *
+                  corr *
+                  wx;
+                pj.x -=
+                  ux *
+                  corr *
+                  wy;
+                pj.y -=
+                  uy *
+                  corr *
+                  wy;
+              }
+            }
+          }
+        }
+      }
+    }
+    // 夹回坐标域，避免斥力把沙粒推出 [-1,1]
+    for (
+      let i = 0;
+      i < n;
+      i++
+    ) {
+      const p =
+        ps[i];
+      if (
+        p.x < -1
+      )
+        p.x = -1;
+      else if (
+        p.x > 1
+      )
+        p.x = 1;
+      if (
+        p.y < -1
+      )
+        p.y = -1;
+      else if (
+        p.y > 1
+      )
+        p.y = 1;
     }
   }
 }
