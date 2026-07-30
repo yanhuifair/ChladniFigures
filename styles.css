@@ -402,6 +402,13 @@ canvas {
   letter-spacing: 0.5px;
 }
 
+/* --- 声源段内：音量后期增强（始终显示，不依赖具体音源） --- */
+.vol-boost {
+  margin-top: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--c-border);
+}
+
 /* --- 声源段内：模拟滑块 / MIDI 状态 --- */
 .sim-control,
 .midi-control {
