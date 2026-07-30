@@ -18,7 +18,7 @@
 const COLLIDE_R = 0.006;
 const COLLIDE_STIFF = 0.5;
 const COLLIDE_CELL = COLLIDE_R * 1.45 * 2; // 网格 cell 取最大半径的 2 倍
-const COLLIDE_K = 16; // 每格最多容纳的粒子数（溢出丢弃）
+const COLLIDE_K = 64; // 每格最多容纳的粒子数（溢出丢弃）；碰撞半径缩小后同格更密，调大以防漏碰
 const GRID_DIM = Math.ceil(
   2 / COLLIDE_CELL,
 );
@@ -1089,7 +1089,22 @@ export class WebGPUParticleSystem {
     );
     cI[0] = GRID_DIM;
     cI[1] = COLLIDE_K;
-    cF[2] = COLLIDE_R;
+    // 碰撞半径跟随「实际显示沙粒尺寸」，使斥开范围≈可见大小：
+    // 视觉半径(归一化) = grainPx·sizeF / plateSize，着色器再乘 sizeF，
+    // 故 collideR = grainPx / plateSize（此处不乘 sizeF）。
+    // 封顶 COLLIDE_R 以保证网格 cell 仍覆盖该半径（网格按 COLLIDE_R 定尺度）。
+    const _ps = params.plateSize || 800;
+    const _gp = params.grainPx || 1.5;
+    let collideR = _gp / _ps;
+    collideR = Math.min(
+      collideR,
+      COLLIDE_R,
+    );
+    collideR = Math.max(
+      collideR,
+      0.0004,
+    );
+    cF[2] = collideR;
     cF[3] = COLLIDE_STIFF;
     cI[4] = num >>> 0;
     cF[5] = params.stack3d != null
