@@ -336,7 +336,7 @@ canvas {
 /* 版本号：位于左上标题（CHLADNI FIGURES BY FAIR）下方，沿用暗色等宽风格；
    与标题留出稍大间距，但不加分隔线（用户偏好无横线）。 */
 .version-label {
-  margin-top: var(--sp-lg);
+  margin-top: var(--sp-sm);
   font-family: var(--font-mono);
   font-size: var(--fs-ui);
   letter-spacing: 0.8px;
