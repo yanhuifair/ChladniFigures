@@ -83,6 +83,7 @@ const DICT = {
     // 开关
     "label.pattern": "PATTERN",
     "label.particles": "PARTICLES",
+    "label.simSound": "SIM SOUND",
     "toggle.on": "{label}: ON",
     "toggle.off": "{label}: OFF",
     // MIDI 状态
@@ -161,6 +162,7 @@ const DICT = {
     "info.volume": "音量",
     "label.pattern": "图案",
     "label.particles": "粒子",
+    "label.simSound": "模拟声音",
     "toggle.on": "{label}：开",
     "toggle.off": "{label}：关",
     "midi.unavailable": "MIDI 不可用",

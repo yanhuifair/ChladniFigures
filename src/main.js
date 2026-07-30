@@ -67,6 +67,7 @@ const state = {
   pxPerCm: 15, // 当前屏幕上 1cm 对应的像素数
 
   simFreq: 440,
+  simSound: true, // 是否发出 SIM 振荡器纯音（可在 SIM 频率条下方开关）
   displayFreq: 440,
   detectedFreq: 0,
   vibrationAmplitude: 0,
@@ -249,6 +250,11 @@ function loadPreferences() {
         typeof p.showParticles ===
         "boolean"
           ? p.showParticles
+          : true,
+      simSound:
+        typeof p.simSound ===
+        "boolean"
+          ? p.simSound
           : true,
       showPattern:
         typeof p.showPattern ===
@@ -1258,6 +1264,8 @@ function init() {
       saved.showParticles;
     state.showPattern =
       saved.showPattern;
+    state.simSound =
+      saved.simSound;
     state.particleCount =
       saved.particleCount;
     state.plateCm =
@@ -1393,6 +1401,14 @@ function init() {
         );
         savePreferences();
       },
+      onToggleSimSound: () => {
+        state.simSound =
+          !state.simSound;
+        engine.setSimSound(
+          state.simSound,
+        );
+        savePreferences();
+      },
     },
   );
 
@@ -1454,6 +1470,10 @@ function init() {
   // 让 SIM 发声频率与已保存值一致（刷新后若默认 sim 也可立即用正确频率）
   engine.setSimFreq(
     state.simFreq,
+  );
+  // 同步 SIM 声音开关（决定是否真正出声）
+  engine.setSimSound(
+    state.simSound,
   );
 
   // MIDI 音符 → 驱动 SIM 频率（与滑块同一条路径）；

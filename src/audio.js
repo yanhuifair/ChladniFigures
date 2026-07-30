@@ -91,6 +91,7 @@ export class AudioEngine {
     this.simGain = null;
     this.simFreqHz = 440; // 与 state.simFreq 同步
     this.simVolume = 0.12; // 固定的温和音量（不随图形增幅变化）
+    this.simSoundEnabled = true; // 是否发出 SIM/MIDI 振荡器纯音（可关闭以静音）
   }
 
   // 对外只读频谱
@@ -723,6 +724,11 @@ export class AudioEngine {
   // 振荡器直接接扬声器（不经过 analyser），图形仍由 simFreq 数值直接驱动，
   // 两者频率一致，物理自洽。
   startSimTone() {
+    // 关闭模拟声音时不出声（仅静音，不影响频率驱动图形）
+    if (
+      !this.simSoundEnabled
+    )
+      return;
     this.ensureContext();
     // 若已在运行则先清理，避免重复节点
     if (
@@ -836,6 +842,25 @@ export class AudioEngine {
         this.ctx.currentTime,
         0.05,
       );
+    }
+  }
+
+  // 开关 SIM/MIDI 振荡器纯音：关闭→静音（停振荡器），开启→若处于 sim/midi 则重新发声
+  setSimSound(
+    enabled,
+  ) {
+    this.simSoundEnabled = !!enabled;
+    if (
+      !this.simSoundEnabled
+    ) {
+      this.stopSimTone();
+    } else if (
+      this.mode ===
+        "sim" ||
+      this.mode ===
+        "midi"
+    ) {
+      this.startSimTone();
     }
   }
 

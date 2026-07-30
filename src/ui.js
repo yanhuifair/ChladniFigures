@@ -62,6 +62,8 @@ export function setupUI(
     $("patternToggleBtn");
   const particleToggleBtn =
     $("particleToggleBtn");
+  const simSoundToggleBtn =
+    $("simSoundToggleBtn");
   const particleCountSlider =
     $("particleCountSlider");
   const particleCountValue =
@@ -292,6 +294,11 @@ export function setupUI(
     "click",
     () =>
       handlers.onToggleParticles(),
+  );
+  simSoundToggleBtn.addEventListener(
+    "click",
+    () =>
+      handlers.onToggleSimSound(),
   );
 
   // --- 沙粒数量滑块 ---
@@ -693,6 +700,27 @@ export function setupUI(
         {
           label: t(
             "label.particles",
+          ),
+        },
+      );
+    simSoundToggleBtn.classList.toggle(
+      "active",
+      state.simSound,
+    );
+    simSoundToggleBtn.textContent = state.simSound
+      ? t(
+        "toggle.on",
+        {
+          label: t(
+            "label.simSound",
+          ),
+        },
+      )
+      : t(
+        "toggle.off",
+        {
+          label: t(
+            "label.simSound",
           ),
         },
       );
