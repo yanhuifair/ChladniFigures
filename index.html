@@ -20,7 +20,9 @@
     </div>
 
     <canvas id="canvas"></canvas>
-    <!-- WebGL2 粒子层：透明叠加在 #canvas 之上，只画沙粒与残影 -->
+    <!-- WebGL2 底板+节线层：透明叠加在 #canvas 之上，实时片元着色器画克拉尼节线 -->
+    <canvas id="platecanvas"></canvas>
+    <!-- WebGL2 粒子层：透明叠加在 #platecanvas 之上，只画沙粒与残影 -->
     <canvas id="glcanvas"></canvas>
 
     <!-- 顶部提示条 -->
@@ -28,7 +30,7 @@
 
     <div class="title-block">
       <div class="title-bar">CHLADNI FIGURES BY FAIR</div>
-      <div class="version-label" id="versionLabel">VERSION 1.1.1</div>
+      <div class="version-label" id="versionLabel">VERSION 1.2.0</div>
     </div>
 
     <!-- 右上角：保存当前图像为 PNG -->

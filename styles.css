@@ -58,7 +58,13 @@ canvas {
   height: 100%;
 }
 
-/* WebGL2 沙粒层：透明叠加在 #canvas 之上，不拦截鼠标 */
+/* WebGL2 底板+节线层：透明叠加在 #canvas 之上，不拦截鼠标（z 低于粒子层） */
+#platecanvas {
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* WebGL2 沙粒层：透明叠加在 #platecanvas 之上，不拦截鼠标 */
 #glcanvas {
   z-index: 1;
   pointer-events: none;

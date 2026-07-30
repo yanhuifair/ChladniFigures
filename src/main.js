@@ -25,6 +25,7 @@ import {
 } from "./render.js";
 import {
   GLParticleRenderer,
+  GLPlateRenderer,
 } from "./render-gl.js";
 import {
   setupUI,
@@ -35,7 +36,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.2.0";
 
 // --- 全局状态 ---
 const state = {
@@ -116,13 +117,21 @@ const canvas =
   document.getElementById(
     "canvas",
   );
-// WebGL2 粒子层（透明叠在 #canvas 之上）；不支持时自动退回 CPU 渲染
+// WebGL2 粒子层（透明叠在 #platecanvas 之上）；不支持时自动退回 CPU 渲染
 const glCanvas =
   document.getElementById(
     "glcanvas",
   );
+// WebGL2 底板+节线层（透明叠在 #canvas 之上）；不支持时退回 Canvas2D 节线纹理
+const plateCanvas =
+  document.getElementById(
+    "platecanvas",
+  );
 const glParticles = new GLParticleRenderer(
   glCanvas,
+);
+const glPlate = new GLPlateRenderer(
+  plateCanvas,
 );
 const engine = new AudioEngine();
 const particles = new ParticleSystem(
@@ -131,6 +140,7 @@ const particles = new ParticleSystem(
 const renderer = new Renderer(
   canvas,
   glParticles,
+  glPlate,
 );
 let ui = null;
 
@@ -1179,6 +1189,23 @@ function saveSnapshot() {
     size,
     size,
   );
+  // WebGL 底板+节线层（透明叠加）：仅当 GPU 底板激活时主画布才不含节线
+  if (
+    glPlate &&
+    glPlate.ok
+  ) {
+    octx.drawImage(
+      plateCanvas,
+      ox,
+      oy,
+      size,
+      size,
+      0,
+      0,
+      size,
+      size,
+    );
+  }
   // WebGL 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复
   if (
     glParticles &&

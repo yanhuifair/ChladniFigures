@@ -88,6 +88,7 @@ export class Renderer {
   constructor(
     canvas,
     glParticles,
+    glPlate,
   ) {
     this.canvas = canvas;
     this.ctx =
@@ -96,6 +97,9 @@ export class Renderer {
       );
     // 可选 GPU 粒子渲染器（WebGL2）；为 null 或不支持时退回 CPU 路径
     this.glParticles = glParticles || null;
+    // 可选 GPU 底板+节线渲染器（WebGL2 片元着色器）；为 null 或不支持时
+    // 退回 Canvas2D 节线纹理
+    this.glPlate = glPlate || null;
     this.patternCanvas = null;
     this.patternCtx = null;
     this.offCanvas = null;
@@ -175,13 +179,27 @@ export class Renderer {
         H,
         this.plateSize,
       );
+    // 同步 GPU 底板+节线画布尺寸（不支持时 glPlate.ok=false，内部自行跳过）
+    if (
+      this.glPlate
+    )
+      this.glPlate.resize(
+        W,
+        H,
+      );
   }
 
   // 重算克拉尼纹理（仅在 dirty 且离上次超过 60ms 时）
+  // GPU 底板激活时跳过：节线由片元着色器全分辨率实时绘制，无需 CPU 纹理
   maybeUpdatePattern(
     state,
     now,
   ) {
+    if (
+      this.glPlate &&
+      this.glPlate.ok
+    )
+      return;
     if (
       !state.showPattern
     )
@@ -360,7 +378,19 @@ export class Renderer {
 
     ctx.save();
 
+    // GPU 底板激活时始终调用 render（内部在 !showPattern 时清成透明，
+    // 避免节线开关关闭后残留旧画面）；否则退回 Canvas2D 节线纹理
     if (
+      this.glPlate &&
+      this.glPlate.ok
+    ) {
+      this.glPlate.render(
+        state,
+        this.plateX,
+        this.plateY,
+        this.plateSize,
+      );
+    } else if (
       state.showPattern
     ) {
       this._drawPlate(
