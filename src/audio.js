@@ -66,6 +66,7 @@ export class AudioEngine {
     this._peakBass = 0.1;
     this._peakMid = 0.1;
     this._peakTreble = 0.1;
+    this._peakRms = 0.1; // 响度自适应峰值（相对响度归一化用）
 
     // 节拍检测：低音包络均值 + 脉冲
     this._bassAvg = 0;
@@ -78,6 +79,8 @@ export class AudioEngine {
       treble: 0,
       overall: 0,
       dominantFreq: 0,
+      loudness: 0,
+      rms: 0,
     };
     this._sBass = 0;
     this._sMid = 0;
@@ -864,6 +867,150 @@ export class AudioEngine {
     }
   }
 
+  // 自适应峰值跟踪（快攻慢衰），与 FFT / 纯音共用
+  _track(
+    peak,
+    v,
+  ) {
+    const attack = 0.5;
+    const release = 0.9985;
+    return v > peak
+      ? peak +
+        (v -
+          peak) *
+          attack
+      : Math.max(
+        0.06,
+        peak *
+          release,
+      );
+  }
+
+  // 将原始频段能量（含 FFT 或纯音合成）统一做：
+  // 自适应归一化 → 归一化响度(loudness) → 节拍 → 主频/各带平滑 → overall → 写入 _spectrum
+  _applyBands(
+    rawBass,
+    rawMid,
+    rawTreble,
+    dominant,
+    rms,
+  ) {
+    this._peakBass =
+      this._track(
+        this._peakBass,
+        rawBass,
+      );
+    this._peakMid =
+      this._track(
+        this._peakMid,
+        rawMid,
+      );
+    this._peakTreble =
+      this._track(
+        this._peakTreble,
+        rawTreble,
+      );
+    const bass = clamp(
+      rawBass /
+        this._peakBass,
+      0,
+      1,
+    );
+    const mid = clamp(
+      rawMid /
+        this._peakMid,
+      0,
+      1,
+    );
+    const treble = clamp(
+      rawTreble /
+        this._peakTreble,
+      0,
+      1,
+    );
+
+    // 归一化响度：与图形共用同一套自适应峰值，
+    // 使 dB 读数与运动门控不再使用"原始 RMS"这一套独立刻度
+    this._peakRms =
+      this._track(
+        this._peakRms,
+        rms,
+      );
+    const loudness = clamp(
+      rms /
+        this._peakRms,
+      0,
+      1,
+    );
+
+    // 节拍检测
+    this._bassAvg +=
+      (bass -
+        this._bassAvg) *
+      0.04;
+    const onset =
+      bass -
+      this._bassAvg;
+    if (
+      onset > 0.25 &&
+      bass > 0.4
+    ) {
+      this._beat = Math.min(
+        1,
+        this._beat +
+          onset *
+            1.6,
+      );
+    }
+    this._beat *= 0.92;
+
+    // 平滑
+    const k = 0.5;
+    this._sBass +=
+      (bass -
+        this._sBass) *
+      k;
+    this._sMid +=
+      (mid -
+        this._sMid) *
+      k;
+    this._sTreble +=
+      (treble -
+        this._sTreble) *
+      k;
+    this._sDominant +=
+      (dominant -
+        this._sDominant) *
+      k;
+    this._sOverall = clamp(
+      (this._sBass *
+        1.0 +
+        this._sMid *
+          0.7 +
+        this._sTreble *
+          0.4) /
+        2.1,
+      0,
+      1,
+    );
+
+    this._spectrum.bass =
+      this._sBass;
+    this._spectrum.mid =
+      this._sMid;
+    this._spectrum.treble =
+      this._sTreble;
+    this._spectrum.overall =
+      this._sOverall;
+    this._spectrum.dominantFreq =
+      this._sDominant;
+    this._spectrum.rms = rms;
+    this._spectrum.loudness =
+      loudness;
+    this._spectrum.beat =
+      this._beat;
+  }
+
   // --- 每帧频谱分析 ---
   update() {
     if (
@@ -871,6 +1018,39 @@ export class AudioEngine {
     ) {
       this._decay(
         0.9,
+      );
+      return;
+    }
+
+    // 纯音音源（sim / midi）：振荡器不经 analyser，改由数值频率合成频谱，
+    // 使频谱条随音高移动，与 FFT 路径同构
+    if (
+      this.mode ===
+        "sim" ||
+      this.mode ===
+        "midi"
+    ) {
+      const f =
+        this.simFreqHz;
+      let b = 0;
+      let m = 0;
+      let t = 0;
+      if (
+        f < 250
+      )
+        b = 1;
+      else if (
+        f < 2000
+      )
+        m = 1;
+      else
+        t = 1;
+      this._applyBands(
+        b,
+        m,
+        t,
+        f,
+        0.5,
       );
       return;
     }
@@ -947,97 +1127,21 @@ export class AudioEngine {
         : 0;
     };
 
-    let bass =
+    const rawBass =
       band(
         20,
         250,
       );
-    let mid =
+    const rawMid =
       band(
         250,
         2000,
       );
-    let treble =
+    const rawTreble =
       band(
         2000,
         8000,
       );
-
-    // --- 自适应增益归一化 ---
-    // 外部软件播放音量不定（系统捕获往往偏小），
-    // 用运行峰值（快攻慢衰）把每个频段拉到 0~1 满动态，
-    // 图形的变形幅度因此与"歌曲本身的相对起伏"吻合，而非绝对音量。
-    const attack = 0.5; // 峰值上升速度
-    const release = 0.9985; // 峰值缓慢回落（约 10 秒半衰）
-    const track = (
-      peak,
-      v,
-    ) =>
-      v > peak
-        ? peak +
-          (v -
-            peak) *
-            attack
-        : Math.max(
-            0.06,
-            peak *
-              release,
-          );
-    this._peakBass =
-      track(
-        this._peakBass,
-        bass,
-      );
-    this._peakMid =
-      track(
-        this._peakMid,
-        mid,
-      );
-    this._peakTreble =
-      track(
-        this._peakTreble,
-        treble,
-      );
-    bass = clamp(
-      bass /
-        this._peakBass,
-      0,
-      1,
-    );
-    mid = clamp(
-      mid /
-        this._peakMid,
-      0,
-      1,
-    );
-    treble = clamp(
-      treble /
-        this._peakTreble,
-      0,
-      1,
-    );
-
-    // --- 节拍检测 ---
-    // 低音瞬时值明显超过其慢速均值 → 鼓点脉冲（0~1，指数衰减）
-    this._bassAvg +=
-      (bass -
-        this._bassAvg) *
-      0.04;
-    const onset =
-      bass -
-      this._bassAvg;
-    if (
-      onset > 0.25 &&
-      bass > 0.4
-    ) {
-      this._beat = Math.min(
-        1,
-        this._beat +
-          onset *
-            1.6,
-      );
-    }
-    this._beat *= 0.92;
 
     // 主频：能量最大 bin
     let maxV = 0;
@@ -1067,51 +1171,13 @@ export class AudioEngine {
           binHz
         : 0;
 
-    // 平滑（指数滑动）：k=0.5 在稳定与跟手之间平衡，
-    // 与 analyser 内置 0.6 叠加后不会过度滞后（去掉了原先 0.35 的二次延迟）
-    const k = 0.5;
-    this._sBass +=
-      (bass -
-        this._sBass) *
-      k;
-    this._sMid +=
-      (mid -
-        this._sMid) *
-      k;
-    this._sTreble +=
-      (treble -
-        this._sTreble) *
-      k;
-    this._sDominant +=
-      (dominant -
-        this._sDominant) *
-      k;
-    this._sOverall =
-      clamp(
-        (this._sBass *
-          1.0 +
-          this._sMid *
-            0.7 +
-          this._sTreble *
-            0.4) /
-          2.1,
-        0,
-        1,
-      );
-
-    this._spectrum.bass =
-      this._sBass;
-    this._spectrum.mid =
-      this._sMid;
-    this._spectrum.treble =
-      this._sTreble;
-    this._spectrum.overall =
-      this._sOverall;
-    this._spectrum.dominantFreq =
-      this._sDominant;
-    this._spectrum.rms = rms;
-    this._spectrum.beat =
-      this._beat;
+    this._applyBands(
+      rawBass,
+      rawMid,
+      rawTreble,
+      dominant,
+      rms,
+    );
   }
 
   _decay(
@@ -1137,6 +1203,10 @@ export class AudioEngine {
       this._sOverall;
     this._spectrum.dominantFreq =
       this._sDominant;
+    this._spectrum.loudness *=
+      factor;
+    this._spectrum.rms *=
+      factor;
     this._beat *= factor;
     this._spectrum.beat =
       this._beat;

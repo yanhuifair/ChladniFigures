@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.6.3";
+const APP_VERSION = "2.7.0";
 
 // --- 全局状态 ---
 const state = {
@@ -1185,20 +1185,12 @@ function animate(
   ) {
     state.volumeLevel = 1;
   } else {
-    const rms =
-      state.spectrum.rms ||
+    // 用相对响度（与图形同套刻度），避免 OUTPUT 等弱信号下"图形动、门控不动"
+    const loud =
+      state.spectrum.loudness ||
       0;
-    const db =
-      20 *
-      Math.log10(
-        Math.max(
-          rms,
-          1e-9,
-        ),
-      );
     state.volumeLevel = clamp(
-      (db + 60) /
-        60,
+      loud,
       0,
       1,
     );

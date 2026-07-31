@@ -639,30 +639,25 @@ export function setupUI(
       "html",
     );
 
-    // 音量条：以时域 RMS 换算分贝（dB）。
-    // 满幅(rms=1)对应 120 dB，静音对应 0 dB，中间为对数刻度；
+    // 音量条：用"相对响度" loudness(0~1，自适应峰值归一化) 映射到 0~120 dB，
+    // 与图形/运动门控共用同一套刻度（不再用原始 RMS 单独算 dB，避免两者不一致）。
     // 条形锚定在右侧，随音量增大向左填充（右 = 高声压级）。
     if (
       volFill
     ) {
-      const rms =
+      const loud =
         state.spectrum &&
-        state.spectrum.rms ||
+        state.spectrum.loudness ||
         0;
-      const db =
-        rms > 1e-7
-          ? Math.max(
-            0,
-            Math.min(
-              120,
-              120 +
-              20 *
-              Math.log10(
-                rms,
-              ),
-            ),
-          )
-          : 0;
+      const db = Math.round(
+        Math.max(
+          0,
+          Math.min(
+            120,
+            loud * 120,
+          ),
+        ),
+      );
       _set(
         volFill,
         "volW",
@@ -675,7 +670,7 @@ export function setupUI(
         _set(
           volDb,
           "volDb",
-          `${db.toFixed(0)} dB`,
+          `${db} dB`,
         );
       }
     }

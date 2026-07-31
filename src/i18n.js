@@ -87,6 +87,7 @@ const DICT = {
     "info.frequency": "FREQUENCY",
     "info.resonance": "RESONANCE",
     "info.volume": "VOLUME",
+    "level.relative": "Relative loudness (auto-scaled to recent peak)",
     // 开关
     "label.pattern": "PATTERN",
     "label.particles": "PARTICLES",
@@ -175,6 +176,7 @@ const DICT = {
     "info.frequency": "频率",
     "info.resonance": "共振",
     "info.volume": "音量",
+    "level.relative": "相对响度（自动对齐近期峰值）",
     "label.pattern": "图案",
     "label.particles": "粒子",
     "label.simSound": "模拟声音",
