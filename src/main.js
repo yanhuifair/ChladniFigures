@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.7.1";
 
 // --- 全局状态 ---
 const state = {
@@ -1942,6 +1942,21 @@ function init() {
     fullscreenBtn
   ) {
     fullscreenBtn.addEventListener(
+      "click",
+      toggleFullscreen,
+    );
+  }
+
+  // 点击底板（#canvas 画布区域，位于各 UI 面板之下）切换全屏：
+  // 上层 #platecanvas / #glcanvas 均为 pointer-events:none，点击会透传到 #canvas
+  const plateHit =
+    document.getElementById(
+      "canvas",
+    );
+  if (
+    plateHit
+  ) {
+    plateHit.addEventListener(
       "click",
       toggleFullscreen,
     );
