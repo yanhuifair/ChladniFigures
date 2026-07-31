@@ -520,6 +520,30 @@ canvas {
   color: var(--c-dim);
   letter-spacing: 1px;
   text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+/* 标题右侧 GitHub 图标：点击打开仓库 */
+.github-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--c-dim);
+  text-decoration: none;
+  opacity: 0.7;
+  transition:
+    color 0.15s,
+    opacity 0.15s;
+}
+.github-link:hover,
+.github-link:focus-visible {
+  color: #fff;
+  opacity: 1;
+  outline: none;
+}
+.github-icon {
+  display: block;
 }
 
 /* --- 右上角：保存图像（PNG）按钮 --- */
@@ -661,4 +685,35 @@ body.fullscreen .fullscreen-btn {
   border-color: #666;
   color: #aaa;
   background: transparent;
+}
+
+/* --- 移动端竖屏：底板占满网页宽度，三段面板竖向排列 --- */
+@media (max-width: 768px) and (orientation: portrait) {
+  /* 三段改为竖向堆叠；限制高度并内部滚动，避免占满整屏、
+     给上方底板留出「铺满宽度」所需的垂直空间（availH ≥ availW 时底板按宽度取正方形）。 */
+  .bottom-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    /* 顶边对齐到「铺满宽度的底板」下沿（约 100vw − 4px），
+       让底栏填满底板到屏幕底部之间的全部空间，消除下方留白；
+       内容超高时内部滚动。 */
+    top: calc(100vw - 4px);
+    overflow-y: auto;
+  }
+  .segment {
+    flex: 0 0 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--c-border);
+    padding: var(--sp-md);
+    gap: var(--sp-sm);
+    overflow: visible;
+  }
+  .segment:last-child {
+    border-bottom: none;
+  }
+  /* 面板内分组间距收紧，优化竖屏可读性 */
+  .param-grid {
+    gap: var(--sp-sm) var(--sp-md);
+  }
 }

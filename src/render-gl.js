@@ -537,7 +537,9 @@ export class GLParticleRenderer {
     );
   }
 
-  // 主渲染：把 records（[{nx,ny,g,c,a}]，FBO 裁剪坐标）绘制并合成到屏幕。
+  // 主渲染：把 records 绘制并合成到屏幕（FBO 裁剪坐标）。
+  // records 可为打包缓冲 { data: Float32Array(stride 5), count }（推荐，零复制），
+  // 也可为旧的对象数组 [{nx,ny,g,c,a}]（兼容）。
   // opts: { plateX, plateY, plateSize, shakeX, shakeY, decay }
   render(
     records,
@@ -602,55 +604,85 @@ export class GLParticleRenderer {
     );
 
     // --- Pass 2: 叠加新粒子（加色混合）---
+    // records 支持两种形态：
+    //  a) 打包缓冲 { data: Float32Array, count }（v2.3.0 起的快路径，零复制）
+    //  b) 旧的对象数组 [{nx,ny,g,c,a}]（保留兼容，例如清屏时传 []）
+    const packed =
+      !!records &&
+      !Array.isArray(
+        records,
+      ) &&
+      !!records.data;
+    const n = packed
+      ? records.count
+      : records.length;
     if (
-      records.length >
-      0
+      n > 0
     ) {
-      const n = records.length;
       const need =
         n *
         this._stride;
+      let d;
       if (
-        !this._data ||
-        this._data.length < need
+        packed
       ) {
-        // 留 20% 余量，避免频繁重分配
-        this._data = new Float32Array(
-          Math.ceil(
-            need * 1.2,
-          ),
-        );
-      }
-      const d = this._data;
-      for (
-        let i = 0;
-        i < n;
-        i++
-      ) {
-        const r =
-          records[
-            i
-          ];
-        const o = i * this._stride;
-        d[
-          o
-        ] = r.nx;
-        d[
-          o + 1
-        ] = r.ny;
-        d[
-          o + 2
-        ] =
-          r.g >
-          this.maxPointSize
-            ? this.maxPointSize
-            : r.g;
-        d[
-          o + 3
-        ] = r.c;
-        d[
-          o + 4
-        ] = r.a;
+        // 打包路径：直接使用调用方缓冲，仅就地夹紧点尺寸上限
+        d = records.data;
+        const maxS =
+          this.maxPointSize;
+        for (
+          let o = 2;
+          o < need;
+          o += this._stride
+        ) {
+          if (
+            d[o] > maxS
+          )
+            d[o] = maxS;
+        }
+      } else {
+        if (
+          !this._data ||
+          this._data.length < need
+        ) {
+          // 留 20% 余量，避免频繁重分配
+          this._data = new Float32Array(
+            Math.ceil(
+              need * 1.2,
+            ),
+          );
+        }
+        d = this._data;
+        for (
+          let i = 0;
+          i < n;
+          i++
+        ) {
+          const r =
+            records[
+              i
+            ];
+          const o = i * this._stride;
+          d[
+            o
+          ] = r.nx;
+          d[
+            o + 1
+          ] = r.ny;
+          d[
+            o + 2
+          ] =
+            r.g >
+            this.maxPointSize
+              ? this.maxPointSize
+              : r.g;
+          d[
+            o + 3
+          ] = r.c;
+          d[
+            o + 4
+          ] = r.a;
+        }
       }
       gl.bindBuffer(
         gl.ARRAY_BUFFER,

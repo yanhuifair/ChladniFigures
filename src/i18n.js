@@ -47,6 +47,11 @@ const DICT = {
   en: {
     // 浏览器标签 / 顶栏保存按钮
     "app.title": "Chladni Figures",
+    "app.bigTitle": "CHLADNI FIGURES",
+    "app.brand": "CHLADNI FIGURES BY FAIR",
+    "app.githubTitle": "View source code on GitHub",
+    "app.githubAria": "GitHub repository",
+    "app.versionLabel": "VERSION",
     "save.image": "SAVE IMAGE",
     "btn.fullscreen": "FULLSCREEN",
     "btn.fullscreenHint": "Press F to toggle fullscreen, ESC to exit",
@@ -86,7 +91,7 @@ const DICT = {
     "label.pattern": "PATTERN",
     "label.particles": "PARTICLES",
     "label.simSound": "SIMULATION SOUND",
-    "label.stack3d": "3D STACK",
+    "label.collision": "COLLISION",
     "toggle.on": "{label}: ON",
     "toggle.off": "{label}: OFF",
     // MIDI 状态
@@ -136,6 +141,11 @@ const DICT = {
   // ===================== 中文 =====================
   zh: {
     "app.title": "克拉尼图形",
+    "app.bigTitle": "克拉尼图形",
+    "app.brand": "克拉尼图形 · 作者 FAIR",
+    "app.githubTitle": "在 GitHub 上查看源码",
+    "app.githubAria": "GitHub 仓库",
+    "app.versionLabel": "版本",
     "save.image": "保存图像",
     "btn.fullscreen": "全屏",
     "btn.fullscreenHint": "按 F 切换全屏，ESC 退出",
@@ -168,7 +178,7 @@ const DICT = {
     "label.pattern": "图案",
     "label.particles": "粒子",
     "label.simSound": "模拟声音",
-    "label.stack3d": "3D 堆叠",
+    "label.collision": "碰撞",
     "toggle.on": "{label}：开",
     "toggle.off": "{label}：关",
     "midi.unavailable": "MIDI 不可用",

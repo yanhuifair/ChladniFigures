@@ -381,7 +381,7 @@ export function blendedHeightGradient(
   };
 }
 
-// 解析 "m,n" 格式（如 "2,3"），范围限制 1..9
+// 解析 "m,n" 格式（如 "2,3"），范围限制 1..15
 export function parseSquareMode(
   mode,
 ) {
@@ -406,11 +406,11 @@ export function parseSquareMode(
     m <
       1 ||
     m >
-      9 ||
+      15 ||
     n <
       1 ||
     n >
-      9
+      15
   ) {
     return null;
   }
@@ -476,7 +476,7 @@ export function freqToMode(
     clamp(
       freq,
       20,
-      20000,
+      50000,
     );
   const baseFreq = 55;
   const refCm = 40;
@@ -505,14 +505,14 @@ export function freqToMode(
   for (
     let m = 1;
     m <=
-    9;
+    15;
     m++
   ) {
     for (
       let n =
         m;
       n <=
-      9;
+      15;
       n++
     ) {
       // Skip degenerate (1,1) — no pattern

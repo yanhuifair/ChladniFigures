@@ -10,79 +10,12 @@
 import {
   blendedHeight,
 } from "./chladni.js";
-
-// 沙粒硬边正方形核：整块 g×g 权重恒为 1 → 无柔化、无圆角截断，纯硬边方块。
-// 按粒度 g (1..12) 预计算并缓存，避免热循环里重复分配。
-const _grainKernels = {};
-function getGrainKernel(
-  g,
-) {
-  const cached =
-    _grainKernels[
-      g
-    ];
-  if (
-    cached
-  )
-    return cached;
-  const arr = new Float32Array(
-    g *
-      g,
-  );
-  arr.fill(
-    1,
-  );
-  _grainKernels[
-    g
-  ] =
-    arr;
-  return arr;
-}
-
-// 高亮沙粒用的硬边正方形精灵（纯白实心方块），按 g 缓存
-const _grainSprites = {};
-function getGrainSprite(
-  g,
-) {
-  const cached =
-    _grainSprites[
-      g
-    ];
-  if (
-    cached
-  )
-    return cached;
-  const s =
-    Math.max(
-      1,
-      g,
-    );
-  const cv =
-    document.createElement(
-      "canvas",
-    );
-  cv.width =
-    s;
-  cv.height =
-    s;
-  const c =
-    cv.getContext(
-      "2d",
-    );
-  c.fillStyle =
-    "#fff";
-  c.fillRect(
-    0,
-    0,
-    s,
-    s,
-  );
-  _grainSprites[
-    g
-  ] =
-    cv;
-  return cv;
-}
+import {
+  buildParticleRecords,
+  recPixelX,
+  recPixelY,
+  REC_STRIDE,
+} from "./particle-records.js";
 
 export class Renderer {
   constructor(
@@ -570,386 +503,36 @@ export class Renderer {
       }
     }
 
-    const m =
-      state.currentM;
-    const n =
-      state.currentN;
-    const liveParticles =
-      [];
-    // GPU 路径收集渲染记录：FBO 裁剪坐标 + 亮度/透明度
-    const glRecs =
-      useGL
-        ? []
-        : null;
-
-    for (
-      let i = 0;
-      i <
-      particles.length;
-      i++
-    ) {
-      const p =
-        particles[
-          i
-        ];
-      const px =
-        Math.floor(
-          cx +
-            p.x *
-              scale -
-            plateX,
-        );
-      const py =
-        Math.floor(
-          cy +
-            p.y *
-              scale -
-            plateY,
-        );
-
-      if (
-        px <
-          1 ||
-        px >=
-          plateSize -
-            1 ||
-        py <
-          1 ||
-        py >=
-          plateSize -
-            1
-      )
-        continue;
-
-      const settled =
-        p.settled;
-      const speed =
-        Math.sqrt(
-          p.vx *
-            p.vx +
-            p.vy *
-              p.vy,
-        );
-      // 腾空跳跃中的沙粒轻微提亮（跳-停模型：静止时 speed=0，小跳时 0.3~10）
-      const movingBoost =
-        Math.min(
-          speed / 6,
-          1,
-        ) *
-        0.3;
-      const edgeDistance =
-        Math.min(
-          1 -
-            Math.abs(
-              p.x,
-            ),
-          1 -
-            Math.abs(
-              p.y,
-            ),
-        );
-      const edgeMask =
-        Math.max(
-          0,
-          Math.min(
-            1,
-            (edgeDistance -
-              0.065) /
-              0.06,
-          ),
-        );
-      if (
-        edgeMask <=
-        0
-      )
-        continue;
-
-      const u =
-        (p.x +
-          1) *
-        0.5;
-      const v =
-        (p.y +
-          1) *
-        0.5;
-      const h =
-        blendedHeight(
-          u,
-          v,
-          state.prevM,
-          state.prevN,
-          m,
-          n,
-          state.blendT,
-        );
-      const nodeAffinity =
-        Math.exp(
-          -(h *
-            h) *
-            110,
-        );
-
-      // 堆叠密度归一化：density 为碰撞阶段统计的近邻数（0=孤立），
-      // 约 6 个近邻即视为"紧密堆积"，映射为 0~1 的密度增强因子。
-      const densN =
-        p.density > 0
-          ? Math.min(
-              1,
-              p.density /
-                6,
-            )
-          : 0;
-
-      const brightness =
-        p.brightness *
-        (0.52 +
-          nodeAffinity *
-            0.96 +
-          movingBoost *
-            0.12) *
-        (0.2 +
-          edgeMask *
-            0.8) *
-        // 密集堆积的沙粒更亮（沙堆高光感）
-        (1 +
-          densN *
-            0.5);
-      const val =
-        Math.floor(
-          Math.min(
-            255,
-            brightness *
-              235 +
-              20,
-          ),
-        );
-      const alpha =
-        Math.min(
-          1,
-          0.18 +
-            nodeAffinity *
-              0.62 +
-            settled *
-              0.22 +
-            movingBoost *
-              0.08 +
-            // 密集堆积的沙粒更实（不透明）
-            densN *
-              0.18,
-        ) *
-        edgeMask;
-
-      // 真实物理尺寸：grainPx（浮点）由 plateCm / grainMm / 屏幕比例推导；
-      // 再按每颗沙粒的直径因子 sizeF 缩放 → 大小沙粒在板上显出尺寸差异。
-      // gf 保持浮点：GPU 的 gl_PointSize 支持连续尺寸（板尺寸变化零跳变）；
-      // CPU 路径才逐粒取整——因每颗 sizeF 不同，舍入阈值被抖散到整个粒群，
-      // 不会出现全体同时跳档的突变。
-      // 严格等比例：不设人为上限（旧 [1,12] clamp 会让大沙粒/小底板时
-      // 渲染尺寸封顶，破坏沙粒与底板的物理比例）。
-      // GPU 路径用浮点 gf；CPU 路径最小 1px（像素离散化的物理下限）。
-      // 密集堆积的沙粒略大（沙堆体积感）。
-      const gf =
-        (state.grainPx ||
-          1) *
-        (p.sizeF ||
-          1) *
-        (1 +
-          densN *
-            0.4);
-      const g =
-        Math.max(
-          1,
-          Math.round(
-            gf,
-          ),
-        );
-      // 亚像素等比例补偿：gf<1 时硬件最小只能画 1px，
-      // 按真实面积覆盖率 gf² 衰减透明度 → 视觉重量仍与物理尺寸成正比
-      const subPx =
-        gf < 1
-          ? gf * gf
-          : 1;
-
-      // 高亮额外亮度（原 CPU 第二 pass 的 globalAlpha）
-      const highlight =
-        0.12 +
-        nodeAffinity *
-          0.34 +
-        edgeMask *
-          0.12 +
-        settled *
-          0.12 +
-        movingBoost *
-          0.08;
-
-      if (
-        useGL
-      ) {
-        // 折叠高亮到颜色/透明度，GPU 加色混合即可还原层次
-        const c =
-          Math.min(
-            1,
-            val /
-              255 +
-              highlight,
-          );
-        const a =
-          Math.min(
-            1,
-            alpha +
-              highlight,
-          ) * subPx;
-        // FBO 裁剪坐标：板顶(py=0) → clipY=+1
-        const nx =
-          (px + 0.5) /
-            plateSize *
-            2 -
-          1;
-        const ny =
-          1 -
-          (py + 0.5) /
-            plateSize *
-            2;
-        glRecs.push(
-          {
-            nx,
-            ny,
-            g: gf, // 浮点尺寸 → gl_PointSize 连续变化，无取整跳变
-            c,
-            a,
-          },
-        );
-        continue;
-      }
-
-      liveParticles.push(
+    // --- 批量生成渲染记录（打包 Float32Array，零对象分配）---
+    // 逐粒亮度/透明度/尺寸的计算已抽到 particle-records.js：
+    //  · 波场高度改用 field-grid 双线性采样（原本每粒 2 次 triangular function）
+    //  · 结果直接写入复用缓冲，不再每帧生成十万个临时对象
+    //  · 高亮折叠进颜色与透明度，Canvas2D 回退不再需要第二遍 drawImage
+    const recs =
+      buildParticleRecords(
+        particles,
         {
-          px,
-          py,
-          g,
-          nodeAffinity,
-          edgeMask,
-          settled,
-          movingBoost,
-          subPx,
+          plateSize,
+          grainPx:
+            state.grainPx,
+          prevM:
+            state.prevM,
+          prevN:
+            state.prevN,
+          curM:
+            state.currentM,
+          curN:
+            state.currentN,
+          blendT:
+            state.blendT,
         },
       );
-
-      // 按 g×g 硬边正方形核写入离屏缓冲（整块权重恒为 1 → 纯硬边方块）
-      const kernel =
-        getGrainKernel(
-          g,
-        );
-      for (
-        let gy = 0;
-        gy < g;
-        gy++
-      ) {
-        const rowY =
-          py + gy;
-        if (
-          rowY <
-            0 ||
-          rowY >=
-            plateSize
-        )
-          continue;
-        for (
-          let gx = 0;
-          gx < g;
-          gx++
-        ) {
-          const weight =
-            kernel[
-              gy *
-                g +
-                gx
-            ];
-          // 硬边方块：权重恒为 1，不再做圆角截断或柔边衰减
-          if (
-            weight <=
-            0
-          )
-            continue;
-          const colX =
-            px + gx;
-          if (
-            colX <
-              0 ||
-            colX >=
-              plateSize
-          )
-            continue;
-          const idx =
-            (rowY *
-              plateSize +
-              colX) *
-            4;
-          const a =
-            alpha *
-            subPx *
-            weight;
-          const add =
-            Math.floor(
-              val * a,
-            );
-          data[
-            idx
-          ] =
-            Math.min(
-              255,
-              data[
-                idx
-              ] +
-                add,
-            );
-          data[
-            idx +
-              1
-          ] =
-            Math.min(
-              255,
-              data[
-                idx +
-                  1
-              ] +
-                add,
-            );
-          data[
-            idx +
-              2
-          ] =
-            Math.min(
-              255,
-              data[
-                idx +
-                  2
-              ] +
-                add,
-            );
-          data[
-            idx +
-              3
-          ] =
-            Math.min(
-              255,
-              data[
-                idx +
-                  3
-              ] +
-                Math.floor(
-                  a * 255,
-                ),
-            );
-        }
-      }
-    }
 
     if (
       useGL
     ) {
       glp.render(
-        glRecs,
+        recs,
         {
           plateX,
           plateY,
@@ -959,6 +542,177 @@ export class Renderer {
         },
       );
       return;
+    }
+
+    // --- Canvas2D 回退：按打包记录写离屏 ImageData ---
+    const rd =
+      recs.data;
+    const rn =
+      recs.count;
+    for (
+      let i = 0,
+        o = 0;
+      i < rn;
+      i++,
+        o += REC_STRIDE
+    ) {
+      const c =
+        rd[o + 3];
+      const a =
+        rd[o + 4];
+      const add =
+        (c *
+          255 *
+          a) |
+        0;
+      if (
+        add <= 0
+      )
+        continue;
+      const aByte =
+        (a * 255) |
+        0;
+      const px =
+        recPixelX(
+          rd[o],
+          plateSize,
+        );
+      const py =
+        recPixelY(
+          rd[o + 1],
+          plateSize,
+        );
+      const gf =
+        rd[o + 2];
+      const g =
+        gf < 1
+          ? 1
+          : Math.round(
+              gf,
+            );
+
+      if (
+        g === 1
+      ) {
+        // 单像素快路径：grainPx≤1 时占绝大多数，直接写一个像素
+        const idx =
+          (py *
+            plateSize +
+            px) *
+          4;
+        let t =
+          data[idx] +
+          add;
+        data[idx] =
+          t > 255
+            ? 255
+            : t;
+        t =
+          data[
+            idx + 1
+          ] + add;
+        data[
+          idx + 1
+        ] =
+          t > 255
+            ? 255
+            : t;
+        t =
+          data[
+            idx + 2
+          ] + add;
+        data[
+          idx + 2
+        ] =
+          t > 255
+            ? 255
+            : t;
+        t =
+          data[
+            idx + 3
+          ] + aByte;
+        data[
+          idx + 3
+        ] =
+          t > 255
+            ? 255
+            : t;
+        continue;
+      }
+
+      // g×g 硬边正方形块（权重恒为 1 → 纯硬边方块，无柔化）
+      for (
+        let gy = 0;
+        gy < g;
+        gy++
+      ) {
+        const rowY =
+          py + gy;
+        if (
+          rowY < 0 ||
+          rowY >=
+            plateSize
+        )
+          continue;
+        const rowBase =
+          rowY *
+          plateSize;
+        for (
+          let gx = 0;
+          gx < g;
+          gx++
+        ) {
+          const colX =
+            px + gx;
+          if (
+            colX < 0 ||
+            colX >=
+              plateSize
+          )
+            continue;
+          const idx =
+            (rowBase +
+              colX) *
+            4;
+          let t =
+            data[idx] +
+            add;
+          data[idx] =
+            t > 255
+              ? 255
+              : t;
+          t =
+            data[
+              idx + 1
+            ] + add;
+          data[
+            idx + 1
+          ] =
+            t > 255
+              ? 255
+              : t;
+          t =
+            data[
+              idx + 2
+            ] + add;
+          data[
+            idx + 2
+          ] =
+            t > 255
+              ? 255
+              : t;
+          t =
+            data[
+              idx + 3
+            ] + aByte;
+          data[
+            idx + 3
+          ] =
+            t > 255
+              ? 255
+              : t;
+        }
+      }
     }
 
     this.offCtx.putImageData(
@@ -971,46 +725,5 @@ export class Renderer {
       plateX,
       plateY,
     );
-
-    // 高亮 2px 粒子（靠近节线的最亮粒子）
-    ctx.fillStyle =
-      "#ffffff";
-    for (
-      let i = 0;
-      i <
-      liveParticles.length;
-      i++
-    ) {
-      const particle =
-        liveParticles[
-          i
-        ];
-      ctx.globalAlpha =
-        Math.min(
-          0.7,
-          particle.nodeAffinity *
-            0.34 +
-            particle.edgeMask *
-            0.12 +
-            particle.settled *
-            0.12 +
-            particle.movingBoost *
-            0.08 +
-            0.12,
-        ) *
-        (particle.subPx ||
-          1);
-      // 硬边方形精灵（纯白实心方块）
-      ctx.drawImage(
-        getGrainSprite(
-          particle.g,
-        ),
-        plateX +
-          particle.px,
-        plateY +
-          particle.py,
-      );
-    }
-    ctx.globalAlpha = 1;
   }
 }

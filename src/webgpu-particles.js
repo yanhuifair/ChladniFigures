@@ -8,7 +8,7 @@
 //      用哈希 PRNG 取代 Math.random）
 //    · 碰撞计算通道：空间网格（atomic 计数 + 邻居解重叠），沙粒不可重叠、
 //      沿节线堆成有宽度的沙带（沙堆观感），同时统计堆叠密度供渲染增强
-//    · 渲染通道：实例化四边形画沙粒（预乘 alpha 叠加）
+//    · 渲染通道：实例化四边形画沙粒，裁剪成圆形、纯白、alpha=1
 //  相比 WebGL2，WebGPU 有 compute + 原子操作，逐粒子碰撞才真正可行，
 //  故可同时拿到「海量粒子」与「沙堆带观感」。
 //  若浏览器不支持 WebGPU 或任何初始化失败 → 返回 null，上层退回 WebGL2+CPU。
@@ -26,15 +26,13 @@ const GRID_CELLS =
   GRID_DIM *
   GRID_DIM;
 
-// 3D 堆叠（小山丘感）：颗粒在 2D 板上随频率跳动，但允许沿 z 方向堆叠，
-// 不再在 2D 完全斥开。用逐 cell 的 atomic 高度累加来分配层（layer）。
-const Z_GRAIN = 0.005;          // 每颗沙粒在 z 方向的厚度（plate 单位）
-const Z_SCALE = 4096;           // 定点数缩放：atomic<u32> 不能直接加 f32
-const Z_FIXED = Math.round(Z_GRAIN * Z_SCALE); // 每层累加的定点值
-const Z_MAX_LAYERS = 40;        // 单 cell 最大堆叠层数（防止无限增高）
-const Z_GRAV = 0.5;             // 竖直重力（plate 单位 / s^2）
-const Z_HOP = 0.015;            // 抛起时的初始竖直速度（轻微弹跳）
-const Z_PROJECT = 0.5;          // 渲染时 z→屏幕像素的抬升比例
+// 沙粒尺寸 / z 渲染常量（3D 堆叠功能已移除：沙粒始终贴在板上，z=0）：
+// 以下仅保留渲染抬升与碰撞同层判定所需的少量项，其余堆高/重力常量已删除。
+const Z_GRAIN = 0.005;          // 沙粒 z 方向厚度（仅渲染用）
+const Z_MAX_LAYERS = 40;        // 渲染时 z 归一化上限
+const Z_HOP = 0.015;            // 抛起竖直速度（保留；z 已不累积）
+const Z_PROJECT = 0.5;          // 渲染时 z→屏幕像素抬升比例
+const Z_REPOSE = 0.04;          // 安息角（保留备用，堆积逻辑已移除）
 
 // 每颗粒子 16 个 float（64 字节），与 WGSL 结构体 P 的自动步长(64)对齐：
 // [0,1]=pos [2,3]=vel [4]=air [5]=airTotal [6]=settled [7]=sizeF
@@ -112,9 +110,9 @@ struct P {
   brightness: f32,
   grip: f32,
   density: f32,
-  z: f32,    // 堆叠高度（3D 沙丘感）：颗粒在 2D 板上跳动，但可在 z 方向堆叠成小山丘
+  z: f32,    // 保留字段（维持 64 字节步长用）：3D 堆叠已移除，始终为 0
   vz: f32,   // 竖直速度
-  pad2: f32,
+  pad2: f32, // 未使用（旧打滑摩擦逻辑已移除），保留以维持 64 字节步长
   pad3: f32,
 };
 `;
@@ -136,30 +134,16 @@ struct U {
   blendT: f32,
   frame: u32,
   num: u32,
-  stack3d: f32,
   zGrain: f32,
+  repose: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var<storage, read> inState: array<P>;
 @group(0) @binding(2) var<storage, read_write> outState: array<P>;
-@group(0) @binding(3) var<storage, read_write> pileTop: array<atomic<u32>>;
 
 const Z_GRAIN_F: f32 = ${Z_GRAIN};
-const Z_FIXED_U: u32 = ${Z_FIXED}u;
-const Z_SCALE_F: f32 = ${Z_SCALE}.0;
-const Z_RECIP: f32 = 1.0 / ${Z_SCALE}.0;
-const Z_MAX_LAYERS_U: u32 = ${Z_MAX_LAYERS}u;
-const Z_GRAV_F: f32 = ${Z_GRAV};
 const Z_HOP_F: f32 = ${Z_HOP};
-
-fn cellOf(px: f32, py: f32) -> u32 {
-  var cx = i32(floor((px + 1.0) / (2.0 * ${COLLIDE_CELL})));
-  var cy = i32(floor((py + 1.0) / (2.0 * ${COLLIDE_CELL})));
-  if (cx < 0) { cx = 0; } else if (cx >= i32(${GRID_DIM})) { cx = i32(${GRID_DIM}) - 1; }
-  if (cy < 0) { cy = 0; } else if (cy >= i32(${GRID_DIM})) { cy = i32(${GRID_DIM}) - 1; }
-  return u32(cy) * ${GRID_DIM}u + u32(cx);
-}
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -172,30 +156,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let kick = u.kick;
   let treble = u.treble;
   let vibRate = u.vibRate;
-
   if (p.air > 0.0) {
     let airTotal = max(p.airTotal, p.air);
     let phase = select(0.0, p.air / airTotal, airTotal > 0.0);
     let ease = 0.35 + 0.65 * phase;
     p.pos.x = p.pos.x + p.vel.x * dt * ease;
     p.pos.y = p.pos.y + p.vel.y * dt * ease;
-    // 竖直（堆叠）动力学：空中时受重力下落，保持 z 直到着陆认领新层
-    p.vz = p.vz - Z_GRAV_F * dt;
-    p.z = p.z + p.vz * dt;
-    if (p.z < 0.0) { p.z = 0.0; p.vz = 0.0; }
+    // 3D 堆叠已移除：沙粒始终贴在板上（z=0），无竖直动力学
+    p.z = 0.0;
+    p.vz = 0.0;
     p.air = p.air - dt;
     if (p.air <= 0.0) {
-      p.air = 0.0;
-      p.vel = vec2<f32>(0.0, 0.0);
-      p.vz = 0.0;
-      // 着陆：在落点 cell 认领一层（沿 z 堆叠成小山丘）
-      if (u.stack3d > 0.5) {
-        let cell = cellOf(p.pos.x, p.pos.y);
-        let layer = min(atomicAdd(&pileTop[cell], Z_FIXED_U), Z_MAX_LAYERS_U - 1u);
-        p.z = f32(layer) * Z_RECIP + Z_GRAIN_F * 0.5;
-      } else {
-        p.z = 0.0;
-      }
+    p.air = 0.0;
+    p.vz = 0.0;
+    p.z = 0.0;
     }
     if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
       p.pos = vec2<f32>((rnd(&seed) * 2.0 - 1.0) * 0.98, (rnd(&seed) * 2.0 - 1.0) * 0.98);
@@ -255,11 +229,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       p.air = airTime;
       p.airTotal = airTime;
       p.settled = max(p.settled - 0.5, 0.0);
-      // 抛起时释放旧层的堆叠高度（若启用 3D 且确实堆在某一层）
-      if (u.stack3d > 0.5 && p.z > 0.0) {
-        let cell = cellOf(p.pos.x, p.pos.y);
-        atomicSub(&pileTop[cell], Z_FIXED_U);
-      }
       p.vz = Z_HOP_F;
       outState[i] = p;
       return;
@@ -271,6 +240,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   } else {
     p.settled = max(p.settled - dt * 1.5, 0.0);
   }
+
   outState[i] = p;
 }
 `;
@@ -327,7 +297,6 @@ struct CU {
   collideR: f32,
   stiff: f32,
   num: u32,
-  stack3d: f32,
   pad1: u32,
   pad2: u32,
 };
@@ -352,7 +321,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   var dens = 0.0;
   let ri = c.collideR * inState[i].sizeF;
   let pz = inState[i].z;
-  let doZ = c.stack3d > 0.5;
+  let doZ = false;
   for (var oy = -1; oy <= 1; oy = oy + 1) {
     for (var ox = -1; ox <= 1; ox = ox + 1) {
       let nx = cx + ox;
@@ -422,7 +391,7 @@ struct RU {
 
 struct VOut {
   @builtin(position) pos: vec4<f32>,
-  @location(0) col: vec4<f32>,
+  @location(0) uv: vec2<f32>, // 实例化四角的局部坐标（-1..1），供片元裁成圆形
 };
 
 @vertex
@@ -432,7 +401,9 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let sx = ru.plateX + (p.pos.x * 0.5 + 0.5) * ru.plateSize;
   let sy = ru.plateY + (p.pos.y * 0.5 + 0.5) * ru.plateSize - zPix;
   let zN = clamp(p.z / (Z_GRAIN_F * Z_MAX_LAYERS_F), 0.0, 1.0);
-  let hlen = max(ru.grainPx * p.sizeF * (1.0 + zN * 0.25), 0.5) * 0.5;
+  // 统一沙粒大小：渲染直径只取 grainPx*sizeF（sizeF 已固定 1.0），
+  // 不再乘 (1+zN*0.25) 的堆叠放大，保证所有沙粒视觉尺寸一致。
+  let hlen = max(ru.grainPx * p.sizeF, 0.5) * 0.5;
   var corners = array<vec2<f32>, 6>(
     vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
     vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0)
@@ -444,29 +415,18 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> VOut 
   let ndcy = 1.0 - py / ru.H * 2.0;
   var out: VOut;
   out.pos = vec4<f32>(ndcx, ndcy, 0.0, 1.0);
-  let uu = (p.pos.x + 1.0) * 0.5;
-  let vv = (p.pos.y + 1.0) * 0.5;
-  let h = blendedHeight(uu, vv, ru.prevM, ru.prevN, ru.curM, ru.curN, ru.blendT);
-  let nodeAffinity = exp(-h * h * 110.0);
-  let densN = min(1.0, p.density / 6.0);
-  // 直 alpha：每颗沙粒的覆盖度，封顶 0.9（不再恒为 1），
-  // 使离板/稀疏处沙粒呈现半透明、有层次，而非一片死白实心。
-  var alpha = clamp(0.15 + nodeAffinity * 0.45 + p.settled * 0.18, 0.0, 0.9) * (1.0 + densN * 0.1);
-  alpha = clamp(alpha, 0.0, 1.0);
-  // 亮度用「加法」合成而非连乘，避免高密度处连乘过冲到纯白；
-  // 封顶 1.0，节线密堆处呈浅灰沙脊、稀疏处呈深灰，整体是有层次的沙色。
-  let lift = nodeAffinity * 0.30 + densN * 0.18 + zN * 0.12;
-  var bright = p.brightness * (0.55 + lift);
-  bright = clamp(bright, 0.0, 1.0);
-  out.col = vec4<f32>(vec3<f32>(bright), alpha); // 直 alpha（非预乘）
+  out.uv = c; // 把局部坐标传给片元着色器，用于裁剪成圆形
   return out;
 }
 
 @fragment
 fn fs(in: VOut) -> @location(0) vec4<f32> {
-  // 直 alpha 输出，由 render 管线用「src-alpha / one-minus-src-alpha」
-  // 混合进残影纹理；残影纹理按直 alpha 累积，避免预乘累加过冲变白。
-  return in.col;
+  // 圆形沙粒：四角四边形被裁剪成单位圆，圆外丢弃（硬边，alpha 恒为 1）。
+  let r = length(in.uv);
+  if (r > 1.0) { discard; }
+  // 纯白、不透明（alpha = 1）。残影拖尾仍由 fade 通道按 0.85/0.92 衰减，
+  // 因此移动中的沙粒会留下渐隐的圆形尾迹，保持「沙粒流动感」。
+  return vec4<f32>(1.0, 1.0, 1.0, 1.0);
 }
 `;
 
@@ -590,7 +550,6 @@ export class WebGPUParticleSystem {
     this.trailSampler = null;
     this.fadePipe = null;
     this.blitPipe = null;
-    this.pileTop = null; // 逐 cell 的堆叠高度累加（atomic<u32> 定点）
 
     const dev = device;
 
@@ -634,7 +593,7 @@ export class WebGPUParticleSystem {
 
     this.uUniform = makeBuf(
       dev,
-      64,
+      80,
       UNIFORM | COPY_DST,
     );
     this.uCollide = makeBuf(
@@ -845,11 +804,6 @@ export class WebGPUParticleSystem {
         4,
       STORAGE,
     );
-    this.pileTop = makeBuf(
-      dev,
-      GRID_CELLS * 4,
-      STORAGE | COPY_DST,
-    );
   }
 
   // 生成初始粒子数据（与 particles.js _spawn 一致）
@@ -860,10 +814,8 @@ export class WebGPUParticleSystem {
       i < this.num;
       i++
     ) {
-      const sizeF =
-        0.55 +
-        Math.random() *
-          0.9;
+      // 统一沙粒大小：取消随机粒径，全部 sizeF=1.0（mass=1，碰撞/运动一致）。
+      const sizeF = 1.0;
       arr.push(
         {
           x:
@@ -912,14 +864,6 @@ export class WebGPUParticleSystem {
         data,
       );
     }
-    // 堆叠高度清零（每 cell 当前堆积层数）
-    this.device.queue.writeBuffer(
-      this.pileTop,
-      0,
-      new Uint32Array(
-        GRID_CELLS,
-      ),
-    );
     this.cur = 0;
   }
 
@@ -939,7 +883,6 @@ export class WebGPUParticleSystem {
       b.destroy();
     this.gridCount.destroy();
     this.gridItems.destroy();
-    if (this.pileTop) this.pileTop.destroy();
     const STORAGE = GPUBufferUsage.STORAGE;
     const COPY_DST = GPUBufferUsage.COPY_DST;
     this._allocBuffers(
@@ -1056,7 +999,7 @@ export class WebGPUParticleSystem {
 
     // 更新 uniform
     const uBuf = new ArrayBuffer(
-      64,
+      80,
     );
     const uF = new Float32Array(
       uBuf,
@@ -1080,10 +1023,10 @@ export class WebGPUParticleSystem {
       : 1;
     uI[12] = this.frame >>> 0;
     uI[13] = num >>> 0;
-    uF[14] = params.stack3d != null
-      ? params.stack3d
-      : 0;
-    uF[15] = Z_GRAIN;
+    uF[14] = Z_GRAIN;
+    uF[15] = params.repose != null
+      ? params.repose
+      : Z_REPOSE;
     dev.queue.writeBuffer(
       this.uUniform,
       0,
@@ -1119,9 +1062,6 @@ export class WebGPUParticleSystem {
     cF[2] = collideR;
     cF[3] = COLLIDE_STIFF;
     cI[4] = num >>> 0;
-    cF[5] = params.stack3d != null
-      ? params.stack3d
-      : 0;
     dev.queue.writeBuffer(
       this.uCollide,
       0,
@@ -1159,12 +1099,6 @@ export class WebGPUParticleSystem {
             binding: 2,
             resource: {
               buffer: this.buffers[n0],
-            },
-          },
-          {
-            binding: 3,
-            resource: {
-              buffer: this.pileTop,
             },
           },
         ],
@@ -1279,7 +1213,13 @@ export class WebGPUParticleSystem {
     );
     pass.end();
 
-    // 两轮 清空→构建→解重叠（迭代收敛更稳）
+    // 两轮 清空→构建→解重叠（迭代收敛更稳）。
+    // collision=false 时整段跳过：去掉颗粒间斥力（density 不受碰撞驱动，
+    // SIM 的 z 堆叠与安息角完全独立，不受影响）。
+    const doCollide = !!params.collision;
+    if (
+      doCollide
+    ) {
     for (
       let it = 0;
       it < 2;
@@ -1334,6 +1274,7 @@ export class WebGPUParticleSystem {
         groups,
       );
       pass.end();
+    }
     }
 
     dev.queue.submit(

@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.1.2";
+const APP_VERSION = "2.6.3";
 
 // --- 全局状态 ---
 const state = {
@@ -66,7 +66,7 @@ const state = {
   audioSource: "sim",
   showParticles: true,
   showPattern: false,
-  stack3d: true, // 3D 堆叠（小山丘感）：颗粒在 2D 板上跳动但可沿 z 堆叠成山丘
+  collision: false, // 颗粒间短程斥力（解开重叠、堆成有宽度的沙带）；默认关，去掉碰撞
 
   particleCount: 10000,
 
@@ -159,12 +159,203 @@ if (
     gpuParticles = null;
   }
 }
+// --- CPU 回退路径的后台线程加速（Web Worker + OffscreenCanvas）---
+// WebGPU 不可用时，尽量把「JS 粒子物理 + 渲染记录打包 + WebGL2 沙粒绘制」
+// 整体搬进 Worker，主线程只留音频分析、界面刷新与底板节线层：
+// 十万粒子也不再阻塞交互（滑块/按钮/音频不掉帧）。
+// 需要 Module Worker + OffscreenCanvas + Worker 内 WebGL2 三项能力，
+// 任一不满足则安静回退到原有同线程路径。
+let particleWorker = null;
+let workerBusy = false;
+let workerFrameAt = 0;
+
+async function tryStartParticleWorker() {
+  if (
+    typeof Worker ===
+      "undefined" ||
+    typeof glCanvas.transferControlToOffscreen !==
+      "function"
+  )
+    return null;
+  let w;
+  try {
+    w = new Worker(
+      new URL(
+        "./particles-worker.js",
+        import.meta.url,
+      ),
+      {
+        type: "module",
+      },
+    );
+  } catch (e) {
+    return null;
+  }
+
+  // 一次性握手：等待指定类型的回包，超时或报错一律视为失败
+  const ask = (
+    message,
+    transfer,
+    expect,
+    timeout,
+  ) =>
+    new Promise(
+      (
+        resolve,
+      ) => {
+        let done = false;
+        const finish = (
+          v,
+        ) => {
+          if (
+            done
+          )
+            return;
+          done = true;
+          w.removeEventListener(
+            "message",
+            onMsg,
+          );
+          w.removeEventListener(
+            "error",
+            onErr,
+          );
+          clearTimeout(
+            timer,
+          );
+          resolve(
+            v,
+          );
+        };
+        const onMsg = (
+          ev,
+        ) => {
+          if (
+            ev.data &&
+            ev.data
+              .type ===
+              expect
+          )
+            finish(
+              ev.data,
+            );
+        };
+        const onErr =
+          () =>
+            finish(
+              null,
+            );
+        const timer =
+          setTimeout(
+            () =>
+              finish(
+                null,
+              ),
+            timeout,
+          );
+        w.addEventListener(
+          "message",
+          onMsg,
+        );
+        w.addEventListener(
+          "error",
+          onErr,
+        );
+        if (
+          transfer
+        )
+          w.postMessage(
+            message,
+            transfer,
+          );
+        else
+          w.postMessage(
+            message,
+          );
+      },
+    );
+
+  // 先问 Worker 能不能创建 WebGL2（用 1×1 临时 OffscreenCanvas 试探）。
+  // 必须先问再转移：画布控制权一旦转移就无法收回主线程。
+  const probe =
+    await ask(
+      {
+        type: "probe",
+      },
+      null,
+      "probe",
+      2000,
+    );
+  if (
+    !probe ||
+    !probe.webgl2
+  ) {
+    w.terminate();
+    return null;
+  }
+
+  const off =
+    glCanvas.transferControlToOffscreen();
+  const ready =
+    await ask(
+      {
+        type: "init",
+        canvas: off,
+        count:
+          NUM_PARTICLES,
+        W: window.innerWidth,
+        H: window.innerHeight,
+        plateSize: 1,
+      },
+      [
+        off,
+      ],
+      "ready",
+      4000,
+    );
+  if (
+    !ready ||
+    !ready.ok
+  ) {
+    w.terminate();
+    return null;
+  }
+
+  // 背压：只有上一帧算完才发下一帧，避免消息队列堆积导致延迟越拖越长
+  w.onmessage = (
+    ev,
+  ) => {
+    if (
+      ev.data &&
+      ev.data
+        .type ===
+        "frame-done"
+    )
+      workerBusy = false;
+  };
+  w.onerror = (
+    err,
+  ) => {
+    console.warn(
+      "粒子 Worker 运行出错：",
+      err,
+    );
+    workerBusy = false;
+  };
+  return w;
+}
+
 if (
   !gpuParticles
 ) {
-  glParticles = new GLParticleRenderer(
-    glCanvas,
-  );
+  particleWorker =
+    await tryStartParticleWorker();
+  if (
+    !particleWorker
+  )
+    glParticles = new GLParticleRenderer(
+      glCanvas,
+    );
 }
 const glPlate = new GLPlateRenderer(
   plateCanvas,
@@ -198,9 +389,16 @@ function resize() {
   // 窗口过小放不下 TARGET 时退化为填满可用区（边距 < 160）。
   // 底板尺寸必须整数：离屏缓冲 createImageData 向下取整，而粒子写入
   // 以 plateSize 作行跨距；小数会导致跨距与实际行宽不符（对角亮线 stride bug）。
+  // 移动端竖屏：取消 160 大边距，让底板占满网页宽度（仅留极小留白）。
+  const isMobilePortrait =
+    !state.fullscreen &&
+    state.W <= 768 &&
+    state.H > state.W;
   const TARGET = state.fullscreen
     ? 0 // 全屏：无边距，底板铺满窗口
-    : 160; // 目标边距（尽量 160）
+    : isMobilePortrait
+      ? 4 // 移动端竖屏：极小边距，底板占满网页宽度
+      : 160; // 桌面 / 横屏目标边距（尽量 160）
   const MIN_PLATE = 64; // 底板最小边长保护
   const bar =
     document.getElementById(
@@ -222,7 +420,11 @@ function resize() {
   let size =
     Math.min(
       availW - 2 * TARGET,
-      availH - 2 * TARGET,
+      // 移动端竖屏：底板顶对齐（仅留极小上边距），高度约束用整段 availH，
+      // 让底板按宽度取正方形、紧贴底栏，消除上下大留白。
+      isMobilePortrait
+        ? availH
+        : availH - 2 * TARGET,
     );
   if (
     size <
@@ -250,10 +452,12 @@ function resize() {
         2,
     );
   state.plateY =
-    Math.floor(
-      (availH - size) /
-        2,
-    );
+    isMobilePortrait
+      ? TARGET // 移动端竖屏：顶对齐，消除上方留白
+      : Math.floor(
+          (availH - size) /
+            2,
+        );
   renderer.resize(
     state.W,
     state.H,
@@ -261,6 +465,19 @@ function resize() {
     state.plateX,
     state.plateY,
   );
+  // Worker 模式下 #glcanvas 已转移，主线程不能再改它的尺寸，交由 Worker 处理
+  if (
+    particleWorker
+  )
+    particleWorker.postMessage(
+      {
+        type: "resize",
+        W: state.W,
+        H: state.H,
+        plateSize:
+          state.plateSize,
+      },
+    );
   if (
     gpuParticles
   )
@@ -325,7 +542,7 @@ function loadPreferences() {
           ? clamp(
               p.simFreq,
               20,
-              20000,
+              50000,
             )
           : 440,
       showParticles:
@@ -900,7 +1117,7 @@ function updateDisplayFreq() {
   state.detectedFreq = clamp(
     freq,
     0,
-    20000,
+    50000,
   );
   // 平滑显示
   state._smoothFreq =
@@ -1002,7 +1219,7 @@ function animate(
           clamp(
             state.desiredM,
             1,
-            9,
+            15,
           ),
         )
       : state.currentM;
@@ -1016,7 +1233,7 @@ function animate(
           clamp(
             state.desiredN,
             1,
-            9,
+            15,
           ),
         )
       : state.currentN;
@@ -1163,6 +1380,17 @@ function animate(
       gpuParticles.setCount(
         pendingParticleCount,
       );
+    // Worker 路径：真正在跑的粒子系统在后台线程，需同步数量
+    if (
+      particleWorker
+    )
+      particleWorker.postMessage(
+        {
+          type: "count",
+          count:
+            pendingParticleCount,
+        },
+      );
     pendingParticleCount = null;
   }
 
@@ -1211,7 +1439,7 @@ function animate(
         curN: state.currentN,
         blendT: state.blendT,
         plateLimit: 0.97,
-        stack3d: state.stack3d
+        collision: state.collision
           ? 1
           : 0,
         grainPx: state.grainPx,
@@ -1225,10 +1453,67 @@ function animate(
       state.plateSize,
       state.grainPx,
     );
+  } else if (
+    particleWorker
+  ) {
+    // 后台线程路径：只投递本帧参数，物理与 WebGL2 绘制都在 Worker 里完成。
+    // workerBusy 做背压——上一帧没算完就跳过本次投递（宁可丢帧也不堆积延迟）。
+    // 看门狗：回包异常丢失时（超过 2 秒）强制解锁，避免沙粒永久冻结。
+    if (
+      workerBusy &&
+      timestamp -
+        workerFrameAt >
+        2000
+    )
+      workerBusy = false;
+    if (
+      !workerBusy
+    ) {
+      workerBusy = true;
+      workerFrameAt =
+        timestamp;
+      particleWorker.postMessage(
+        {
+          type: "frame",
+          dt,
+          vibration:
+            field.vibration,
+          treble:
+            field.treble,
+          kick: field.kick,
+          vibRate:
+            field.vibRate,
+          motionGain:
+            field.motionGain,
+          plateLimit: 0.97,
+          prevM:
+            state.prevM,
+          prevN:
+            state.prevN,
+          curM: state.currentM,
+          curN: state.currentN,
+          blendT:
+            state.blendT,
+          collision:
+            state.collision,
+          showParticles:
+            state.showParticles,
+          grainPx:
+            state.grainPx,
+          plateSize:
+            state.plateSize,
+          plateX:
+            state.plateX,
+          plateY:
+            state.plateY,
+        },
+      );
+    }
   } else {
     particles.update(
       dt,
       field,
+      state.collision,
     );
     renderer._drawParticles(
       state,
@@ -1314,23 +1599,33 @@ function saveSnapshot() {
       size,
     );
   }
-  // WebGL/WebGPU 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复
+  // WebGL/WebGPU 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复。
+  // Worker 模式下 #glcanvas 是「占位画布」（真实绘制在 OffscreenCanvas 里），
+  // 规范允许把它当作图像源读回；个别浏览器若不支持则跳过沙粒层而非整体失败。
   if (
     (glParticles &&
       glParticles.ok) ||
-    gpuParticles
+    gpuParticles ||
+    particleWorker
   ) {
-    octx.drawImage(
-      glCanvas,
-      ox,
-      oy,
-      size,
-      size,
-      0,
-      0,
-      size,
-      size,
-    );
+    try {
+      octx.drawImage(
+        glCanvas,
+        ox,
+        oy,
+        size,
+        size,
+        0,
+        0,
+        size,
+        size,
+      );
+    } catch (e) {
+      console.warn(
+        "沙粒层读回失败，本次快照只含底板：",
+        e,
+      );
+    }
   }
   // 文件名：模式 + 时间戳
   const d = new Date();
@@ -1427,7 +1722,10 @@ function init() {
     versionLabel
   )
     versionLabel.textContent =
-      "VERSION " +
+      t(
+        "app.versionLabel",
+      ) +
+      " " +
       APP_VERSION;
 
   const saved =
@@ -1469,6 +1767,23 @@ function init() {
   particles.setCount(
     state.particleCount,
   );
+  // 三条路径的粒子数量在启动时就对齐到用户上次的偏好
+  if (
+    gpuParticles
+  )
+    gpuParticles.setCount(
+      state.particleCount,
+    );
+  if (
+    particleWorker
+  )
+    particleWorker.postMessage(
+      {
+        type: "count",
+        count:
+          state.particleCount,
+      },
+    );
 
   // 初始模式（自动）：默认 3×4
   state.desiredM = 3;
@@ -1506,9 +1821,9 @@ function init() {
           !state.showParticles;
         savePreferences();
       },
-      onToggleStack3d: () => {
-        state.stack3d =
-          !state.stack3d;
+      onToggleCollision: () => {
+        state.collision =
+          !state.collision;
         savePreferences();
       },
       onParticleCount: (
@@ -1577,7 +1892,7 @@ function init() {
           clamp(
             v,
             20,
-            20000,
+            50000,
           );
         // 实时更新 SIM 发声频率（sim / midi 模式下振荡器存在）
         engine.setSimFreq(
@@ -1721,7 +2036,7 @@ function init() {
       state.simFreq = clamp(
         freq,
         20,
-        20000,
+        50000,
       );
       engine.setSimFreq(
         state.simFreq,

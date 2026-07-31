@@ -11,7 +11,7 @@
     <!-- 引导层（默认不弹出，用户可在面板直接选择音源） -->
     <div class="permission-overlay hidden" id="permOverlay">
       <div class="permission-card">
-        <h2>CHLADNI FIGURES</h2>
+        <h2 data-i18n="app.bigTitle">CHLADNI FIGURES</h2>
         <p data-i18n-html="perm.desc">实时音频驱动的克拉尼图形粒子模拟<br />监听电脑上其他软件播放的音乐，图形随歌实时变形</p>
         <button id="listenSysBtn" data-i18n="perm.listenSys">监听电脑播放的音乐</button>
         <button class="demo-link" id="startMicBtn" data-i18n="perm.mic">启用麦克风</button>
@@ -29,8 +29,31 @@
     <div class="toast" id="toast"></div>
 
     <div class="title-block">
-      <div class="title-bar">CHLADNI FIGURES BY FAIR</div>
-      <div class="version-label" id="versionLabel">VERSION 2.1.2</div>
+      <div class="title-bar">
+        <span data-i18n="app.brand">CHLADNI FIGURES BY FAIR</span>
+        <a
+          class="github-link"
+          href="https://github.com/yanhuifair/ChladniFigures"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-i18n-attr="title:app.githubTitle;aria-label:app.githubAria"
+        >
+          <svg
+            class="github-icon"
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+            />
+          </svg>
+        </a>
+      </div>
+      <div class="version-label" id="versionLabel">VERSION 2.6.3</div>
     </div>
 
     <!-- 右上角：保存当前图像为 PNG -->
@@ -63,7 +86,7 @@
             <div data-i18n="sub.simInput">SIMULATED INPUT</div>
             <div class="sim-value" id="simValue">440 Hz</div>
           </div>
-          <input class="sim-slider" id="simSlider" type="range" min="20" max="20000" step="1" value="440" />
+          <input class="sim-slider" id="simSlider" type="range" min="20" max="50000" step="1" value="440" />
           <button class="particle-toggle-btn active" id="simSoundToggleBtn">SIMULATION SOUND: ON</button>
         </div>
         <div class="midi-control hidden" id="midiControl">
@@ -90,7 +113,7 @@
           <button class="particle-toggle-btn active" id="particleToggleBtn">PARTICLES: ON</button>
         </div>
         <div class="particle-toggle">
-          <button class="particle-toggle-btn active" id="stack3dToggleBtn">3D STACK: ON</button>
+          <button class="particle-toggle-btn" id="collisionToggleBtn">COLLISION: OFF</button>
         </div>
         <div class="param-grid">
           <div class="param-cell">
@@ -102,10 +125,10 @@
           </div>
           <div class="param-cell">
             <div class="count-row">
-              <span class="count-label" data-i18n="param.plateSide">PLATE SIDE</span>
-              <span class="count-value" id="plateSizeValue">40 cm</span>
+              <span class="count-label" data-i18n="param.sandGrain">SAND GRAIN</span>
+              <span class="count-value" id="grainValue">0.50 mm</span>
             </div>
-            <input class="count-slider" id="plateSizeSlider" type="range" min="5" max="100" step="1" value="40" />
+            <input class="count-slider" id="grainSlider" type="range" min="0.05" max="5" step="0.05" value="0.5" />
           </div>
           <div class="param-cell">
             <div class="count-row">
@@ -116,10 +139,10 @@
           </div>
           <div class="param-cell">
             <div class="count-row">
-              <span class="count-label" data-i18n="param.sandGrain">SAND GRAIN</span>
-              <span class="count-value" id="grainValue">0.50 mm</span>
+              <span class="count-label" data-i18n="param.plateSide">PLATE SIDE</span>
+              <span class="count-value" id="plateSizeValue">40 cm</span>
             </div>
-            <input class="count-slider" id="grainSlider" type="range" min="0.05" max="5" step="0.05" value="0.5" />
+            <input class="count-slider" id="plateSizeSlider" type="range" min="5" max="100" step="1" value="40" />
           </div>
         </div>
       </section>

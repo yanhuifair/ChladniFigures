@@ -62,8 +62,8 @@ export function setupUI(
     $("patternToggleBtn");
   const particleToggleBtn =
     $("particleToggleBtn");
-  const stack3dToggleBtn =
-    $("stack3dToggleBtn");
+  const collisionToggleBtn =
+    $("collisionToggleBtn");
   const simSoundToggleBtn =
     $("simSoundToggleBtn");
   const particleCountSlider =
@@ -298,12 +298,12 @@ export function setupUI(
       handlers.onToggleParticles(),
   );
   if (
-    stack3dToggleBtn
+    collisionToggleBtn
   ) {
-    stack3dToggleBtn.addEventListener(
+    collisionToggleBtn.addEventListener(
       "click",
       () =>
-        handlers.onToggleStack3d(),
+        handlers.onToggleCollision(),
     );
   }
   simSoundToggleBtn.addEventListener(
@@ -521,21 +521,123 @@ export function setupUI(
   );
 
   // --- 每帧刷新界面 ---
+  // 变化检测缓存：仅当值真正变化时才写 DOM，避免每帧 60×N 次无谓写入
+  // （这是 GPU 模式下主线程唯一持续存在的逐帧 CPU 开销）。
+  // `_ui` 保存上次写入的值；`_set`/`_toggle`/`_hidden` 仅在键变化时真正操作 DOM。
+  const _ui = {};
+  const _set = (
+    el,
+    key,
+    val,
+    kind = "text",
+  ) => {
+    if (
+      !el ||
+      _ui[
+        key
+      ] ===
+      val
+    )
+      return;
+    _ui[
+      key
+    ] =
+      val;
+    if (
+      kind ===
+      "html"
+    )
+      el.innerHTML =
+        val;
+    else if (
+      kind ===
+      "style"
+    )
+      el.style.width =
+        val;
+    else if (
+      kind ===
+      "prop"
+    )
+      el.value =
+        val;
+    else
+      el.textContent =
+        val;
+  };
+  const _toggle = (
+    el,
+    key,
+    on,
+    cls = "active",
+  ) => {
+    if (
+      !el ||
+      _ui[
+        key
+      ] ===
+      on
+    )
+      return;
+    _ui[
+      key
+    ] =
+      on;
+    el.classList.toggle(
+      cls,
+      on,
+    );
+  };
+  const _hidden = (
+    el,
+    key,
+    hide,
+  ) => {
+    if (
+      !el ||
+      _ui[
+        key
+      ] ===
+      hide
+    )
+      return;
+    _ui[
+      key
+    ] =
+      hide;
+    el.classList.toggle(
+      "hidden",
+      hide,
+    );
+  };
+
   function update(
     state,
   ) {
     // 网格恒为自动：GRID 读数显示当前图案模式 (m×n)
-    modeDisplay.textContent = `${state.currentM}×${state.currentN}`;
+    _set(
+      modeDisplay,
+      "mode",
+      `${state.currentM}×${state.currentN}`,
+    );
 
     // 音源显示名：随浏览器语言切换
-    sourceDisplay.textContent =
+    _set(
+      sourceDisplay,
+      "source",
       t(
         SOURCE_KEYS[
           state.audioSource
         ] ||
         "src.simulation",
-      );
-    freqDisplay.innerHTML = `${state.displayFreq} <span>Hz</span>`;
+      ),
+    );
+    _set(
+      freqDisplay,
+      "freq",
+      `${state.displayFreq} <span>Hz</span>`,
+      "html",
+    );
 
     // 音量条：以时域 RMS 换算分贝（dB）。
     // 满幅(rms=1)对应 120 dB，静音对应 0 dB，中间为对数刻度；
@@ -561,19 +663,20 @@ export function setupUI(
             ),
           )
           : 0;
-      volFill.style.width = `${(
-        db /
-        120 *
-        100
-      ).toFixed(
-        1,
-      )}%`;
+      _set(
+        volFill,
+        "volW",
+        `${(db / 120 * 100).toFixed(1)}%`,
+        "style",
+      );
       if (
         volDb
       ) {
-        volDb.textContent = `${db.toFixed(
-          0,
-        )} dB`;
+        _set(
+          volDb,
+          "volDb",
+          `${db.toFixed(0)} dB`,
+        );
       }
     }
 
@@ -592,56 +695,66 @@ export function setupUI(
               state.plateStiffness,
           },
         );
-      resonanceDisplay.innerHTML =
-        `${Math.round(
-          fRes,
-        )} <span>Hz</span>`;
+      _set(
+        resonanceDisplay,
+        "res",
+        `${Math.round(fRes)} <span>Hz</span>`,
+        "html",
+      );
     }
 
-    micBtn.classList.toggle(
-      "active",
+    _toggle(
+      micBtn,
+      "mic",
       state.audioSource ===
         "mic",
     );
-    outputBtn.classList.toggle(
-      "active",
+    _toggle(
+      outputBtn,
+      "out",
       state.audioSource ===
         "output",
     );
-    simBtn.classList.toggle(
-      "active",
+    _toggle(
+      simBtn,
+      "sim",
       state.audioSource ===
         "sim",
     );
-    midiBtn.classList.toggle(
-      "active",
+    _toggle(
+      midiBtn,
+      "midi",
       state.audioSource ===
         "midi",
     );
 
     // 频率滑块：仅 SIMULATION 模式显示。MIDI 为纯 MIDI 驱动，
     // 频率完全由弹奏的音符决定，不显示手动滑块（只留 MIDI INPUT 状态）。
-    simControl.classList.toggle(
-      "hidden",
+    _hidden(
+      simControl,
+      "simCtl",
       state.audioSource !==
         "sim",
     );
-    inputDeviceControl.classList.toggle(
-      "hidden",
+    _hidden(
+      inputDeviceControl,
+      "inDev",
       state.audioSource !==
         "mic",
     );
     // OUTPUT 模式且有回环设备可选时显示输出设备下拉框
-    outputDeviceControl.classList.toggle(
-      "hidden",
+    _hidden(
+      outputDeviceControl,
+      "outDev",
       state.audioSource !==
         "output" ||
         !outputDeviceControl
           .dataset
           .hasDevices,
     );
-    midiControl.classList.toggle(
-      "hidden",
+    _hidden(
+      midiControl,
+      "midiCtl",
       state.audioSource !==
         "midi",
     );
@@ -649,14 +762,21 @@ export function setupUI(
       state.audioSource ===
       "sim"
     ) {
-      simSlider.value = String(
-        Math.round(
-          state.simFreq,
+      _set(
+        simSlider,
+        "simSlider",
+        String(
+          Math.round(
+            state.simFreq,
+          ),
         ),
+        "prop",
       );
-      simValue.textContent = `${Math.round(
-        state.simFreq,
-      )} Hz`;
+      _set(
+        simValue,
+        "simVal",
+        `${Math.round(state.simFreq)} Hz`,
+      );
     }
     if (
       midiControl &&
@@ -665,68 +785,30 @@ export function setupUI(
       ) &&
       midiStatus
     ) {
-      midiStatus.textContent =
+      _set(
+        midiStatus,
+        "midiStatus",
         state.midiStatusMsg ||
-        t(
-          "midi.disconnected",
-        );
+          t(
+            "midi.disconnected",
+          ),
+      );
     }
 
-    patternToggleBtn.classList.toggle(
-      "active",
+    _toggle(
+      patternToggleBtn,
+      "pat",
       state.showPattern,
     );
-    patternToggleBtn.textContent = state.showPattern
-      ? t(
-        "toggle.on",
-        {
-          label: t(
-            "label.pattern",
-          ),
-        },
-      )
-      : t(
-        "toggle.off",
-        {
-          label: t(
-            "label.pattern",
-          ),
-        },
-      );
-    particleToggleBtn.classList.toggle(
-      "active",
-      state.showParticles,
-    );
-    particleToggleBtn.textContent = state.showParticles
-      ? t(
-        "toggle.on",
-        {
-          label: t(
-            "label.particles",
-          ),
-        },
-      )
-      : t(
-        "toggle.off",
-        {
-          label: t(
-            "label.particles",
-          ),
-        },
-      );
-    if (
-      stack3dToggleBtn
-    ) {
-      stack3dToggleBtn.classList.toggle(
-        "active",
-        state.stack3d,
-      );
-      stack3dToggleBtn.textContent = state.stack3d
+    _set(
+      patternToggleBtn,
+      "patTxt",
+      state.showPattern
         ? t(
           "toggle.on",
           {
             label: t(
-              "label.stack3d",
+              "label.pattern",
             ),
           },
         )
@@ -734,32 +816,93 @@ export function setupUI(
           "toggle.off",
           {
             label: t(
-              "label.stack3d",
+              "label.pattern",
             ),
           },
-        );
+        ),
+    );
+    _toggle(
+      particleToggleBtn,
+      "part",
+      state.showParticles,
+    );
+    _set(
+      particleToggleBtn,
+      "partTxt",
+      state.showParticles
+        ? t(
+          "toggle.on",
+          {
+            label: t(
+              "label.particles",
+            ),
+          },
+        )
+        : t(
+          "toggle.off",
+          {
+            label: t(
+              "label.particles",
+            ),
+          },
+        ),
+    );
+    if (
+      collisionToggleBtn
+    ) {
+      _toggle(
+        collisionToggleBtn,
+        "col",
+        state.collision,
+      );
+      _set(
+        collisionToggleBtn,
+        "colTxt",
+        state.collision
+          ? t(
+            "toggle.on",
+            {
+              label: t(
+                "label.collision",
+              ),
+            },
+          )
+          : t(
+            "toggle.off",
+            {
+              label: t(
+                "label.collision",
+              ),
+            },
+          ),
+      );
     }
-    simSoundToggleBtn.classList.toggle(
-      "active",
+    _toggle(
+      simSoundToggleBtn,
+      "ssnd",
       state.simSound,
     );
-    simSoundToggleBtn.textContent = state.simSound
-      ? t(
-        "toggle.on",
-        {
-          label: t(
-            "label.simSound",
-          ),
-        },
-      )
-      : t(
-        "toggle.off",
-        {
-          label: t(
-            "label.simSound",
-          ),
-        },
-      );
+    _set(
+      simSoundToggleBtn,
+      "ssndTxt",
+      state.simSound
+        ? t(
+          "toggle.on",
+          {
+            label: t(
+              "label.simSound",
+            ),
+          },
+        )
+        : t(
+          "toggle.off",
+          {
+            label: t(
+              "label.simSound",
+            ),
+          },
+        ),
+    );
   }
 
   // 初始化/外部同步沙粒数量滑块显示

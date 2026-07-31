@@ -21,6 +21,16 @@ const COLLIDE_OFFS = [
 // 直接数"重叠"会漏掉紧贴的邻居；放大到 ~1.8× 才能捕捉到堆积密度）
 const COLLIDE_DENS_MULT = 1.8;
 
+// --- CPU 路径性能优化：波场粗网格缓存 ---
+// 实现已抽到 src/field-grid.js，物理与渲染共用同一份网格（每帧只构建一次）。
+import {
+  buildFieldGrid as _buildFieldGrid,
+  sampleHeight as _sampleHeight,
+  sampleGrad as _sampleGrad,
+  gradOut as _gradOut,
+} from "./field-grid.js";
+
+
 export class ParticleSystem {
   constructor(
     numParticles = 10000,
@@ -119,16 +129,11 @@ export class ParticleSystem {
       0.7 +
       Math.random() *
         0.6;
-    // 真实沙粒有尺寸分布：sizeF 为相对直径因子（约 0.55~1.45）
-    p.sizeF =
-      0.55 +
-      Math.random() *
-        0.9;
-    // 质量 ∝ 体积 ∝ 直径³：越大越重、惯性越大、越难被抛起、弹得越低
-    p.mass =
-      p.sizeF *
-      p.sizeF *
-      p.sizeF;
+    // 统一沙粒大小：不再随机粒径（旧 0.55~1.45），全部 sizeF=1.0，
+    // 保证 CPU 回退路径下所有沙粒视觉尺寸一致。
+    p.sizeF = 1.0;
+    // 质量 ∝ 体积 ∝ 直径³：统一直径 → mass=1，运动/碰撞一致。
+    p.mass = 1.0;
     // 堆叠密度：每帧由碰撞阶段重新统计近邻数（0 = 孤立）
     p.density = 0;
     return p;
@@ -138,6 +143,7 @@ export class ParticleSystem {
   update(
     dt,
     field,
+    collision,
   ) {
     const dtClamped =
       Math.min(
@@ -159,6 +165,11 @@ export class ParticleSystem {
     const vibRate =
       field.vibRate ||
       1;
+
+    // 每帧预计算波场粗网格（见文件顶部 _buildFieldGrid）：把逐粒 trig 换成网格采样
+    _buildFieldGrid(
+      field,
+    );
 
     for (
       let i = 0;
@@ -236,7 +247,7 @@ export class ParticleSystem {
           1) *
         0.5;
       const psi =
-        field.psiAt(
+        _sampleHeight(
           u,
           v,
         );
@@ -313,13 +324,12 @@ export class ParticleSystem {
           // 叠加一个朝节线的弱偏置（加速向节点收敛）。
           // 关键：即使梯度为 0（波腹中心 ∇|ψ|=0），也必须给随机方向，
           // 否则波腹沙粒永远弹不出去 → 残留在波腹，分布失真。
-          const g =
-            field.gradAt(
-              u,
-              v,
-            );
-          let gx = -g.dx;
-          let gy = -g.dy;
+          _sampleGrad(
+            u,
+            v,
+          );
+          let gx = -_gradOut.x;
+          let gy = -_gradOut.y;
           const glen =
             Math.sqrt(
               gx *
@@ -468,8 +478,23 @@ export class ParticleSystem {
       }
     }
 
-    // 颗粒间短程斥力：解开重叠，使沙粒不能占同一点（节线处堆成有宽度的沙带）
-    this._resolveCollisions();
+    // 颗粒间短程斥力：解开重叠，使沙粒不能占同一点（节线处堆成有宽度的沙带）。
+    // collision=false（默认）时整段跳过：去掉碰撞——沙粒沿节线收成细脊（更接近真实克拉尼图形），
+    // 并重置 density，避免沿用上一帧的陈旧堆积密度（渲染端依赖它做高光/不透明）。
+    if (
+      collision
+    ) {
+      this._resolveCollisions();
+    } else {
+      const ps = this.particles;
+      for (
+        let i = 0;
+        i < ps.length;
+        i++
+      ) {
+        ps[i].density = 0;
+      }
+    }
   }
 
   // 颗粒间短程斥力（空间网格 + 位置修正）：沙粒不可重叠，节线处自然堆成有宽度的沙带。
