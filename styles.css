@@ -235,6 +235,17 @@ canvas {
   margin-top: var(--sp-md);
 }
 
+/* PATTERN / PARTICLES 两个开关同行排列 */
+.toggle-row {
+  display: flex;
+  gap: var(--sp-md);
+}
+.toggle-row .particle-toggle-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
 .particle-toggle-btn {
   width: 100%;
   height: 24px;
