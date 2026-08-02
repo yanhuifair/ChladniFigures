@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.10";
+const APP_VERSION = "2.9.11";
 
 // --- 全局状态 ---
 const state = {
@@ -2125,13 +2125,13 @@ function init() {
       onSimFreq: (
         v,
       ) => {
-        state.simFreq =
-          clamp(
-            v,
-            20,
-            50000,
-          );
-        // 实时更新 SIM 发声频率（sim / midi 模式下振荡器存在）
+      state.simFreq =
+        clamp(
+          v,
+          0,
+          50000,
+        );
+      // 实时更新 SIM 发声频率（sim / midi 模式下振荡器存在）
         engine.setSimFreq(
           state.simFreq,
         );
@@ -2290,7 +2290,7 @@ function init() {
     ) {
       state.simFreq = clamp(
         freq,
-        20,
+        0,
         50000,
       );
       engine.setSimFreq(
