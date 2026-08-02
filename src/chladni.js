@@ -1292,11 +1292,15 @@ export function packedPsi(
   const cx = 2 * u - 1;
   const cy = 2 * v - 1;
   if (shape < 1.5) {
-    // 圆板精确本征函数：J_n(z_{n,m}·r)·cos(nθ)
+    // 圆板自由边本征函数：J_n(z_{n,m}·r)·[cos(nθ)+sin(nθ)]/√2
+    // nAng≥1 自动叠加简并伙伴（角向 cos/sin 同频），与 circlePsi / GLSL / WGSL 完全一致。
+    // 此前此处只有 cos(nθ)，导致 CPU 回退路径（Canvas2D 节线 + Worker 粒子）的圆形
+    // 节线比 GPU 路径旋转 45°/n，沙粒与绘制节线对不齐。
     const nAng = Math.round(a[base + 27]);
     const z = a[base + 28];
     const r = Math.sqrt(cx * cx + cy * cy);
-    const ang = nAng === 0 ? 1 : Math.cos(nAng * Math.atan2(cy, cx));
+    const th = Math.atan2(cy, cx);
+    const ang = nAng === 0 ? 1 : (Math.cos(nAng * th) + Math.sin(nAng * th)) / Math.SQRT2;
     return besselJ(nAng, z * r) * ang * scale;
   }
   return (
