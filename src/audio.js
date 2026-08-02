@@ -419,6 +419,34 @@ export class AudioEngine {
     return ok;
   }
 
+  // 显式弹出"共享系统音频"请求（getDisplayMedia），
+  // 跳过虚拟回环声卡直采。SHARE 按钮调用：无论是否检测到回环设备，
+  // 都直接走屏幕共享兜底路径（含"分享系统音频"勾选提示）。
+  async shareSystemAudio() {
+    this.ensureContext();
+    if (
+      this.ctx.state ===
+        "suspended"
+    )
+      await this.ctx.resume();
+    this._setAudible(
+      false,
+    );
+    this.stopAll();
+    this.outputMethod = "";
+    const ok =
+      await this.startSystem();
+    if (
+      ok
+    ) {
+      this.mode =
+        "output";
+      this.outputMethod =
+        "display";
+    }
+    return ok;
+  }
+
   // 枚举所有虚拟回环输入设备（可承载系统音频输出的虚拟声卡）
   async listLoopbackDevices() {
     const devices =

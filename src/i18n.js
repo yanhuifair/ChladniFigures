@@ -70,6 +70,8 @@ const DICT = {
     "src.output": "OUTPUT",
     "src.simulation": "SIMULATION",
     "src.midi": "MIDI",
+    "src.share": "SHARE",
+    "src.shareTitle": "Pop the system-audio share request",
     // 子标题
     "sub.inputDevice": "INPUT DEVICE",
     "sub.outputDevice": "OUTPUT DEVICE",
@@ -162,6 +164,8 @@ const DICT = {
     "src.output": "输出",
     "src.simulation": "模拟",
     "src.midi": "MIDI",
+    "src.share": "共享",
+    "src.shareTitle": "弹出系统音频共享请求",
     "sub.inputDevice": "输入设备",
     "sub.outputDevice": "输出设备",
     "sub.simInput": "模拟输入",

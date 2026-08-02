@@ -38,6 +38,8 @@ export function setupUI(
     $("micBtn");
   const outputBtn =
     $("outputBtn");
+  const shareBtn =
+    $("shareBtn");
   const simBtn =
     $("simBtn");
   const midiBtn =
@@ -154,6 +156,11 @@ export function setupUI(
       handlers.onSelectSource(
         "output",
       ),
+  );
+  shareBtn.addEventListener(
+    "click",
+    () =>
+      handlers.onShareSystem(),
   );
   simBtn.addEventListener(
     "click",

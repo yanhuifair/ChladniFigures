@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.7.5";
+const APP_VERSION = "2.7.6";
 
 // --- 全局状态 ---
 const state = {
@@ -778,6 +778,49 @@ async function onSelectSource(
     }
   }
   return ok;
+}
+
+// 显式弹出"共享系统音频"请求（SHARE 按钮）：走屏幕共享路径并切到 OUTPUT 音源
+async function onShareSystem() {
+  const ok =
+    await engine.shareSystemAudio();
+  if (
+    !ok
+  ) {
+    if (
+      ui
+    )
+      ui.showToast(
+        engine.lastError ===
+          "no-audio"
+          ? t(
+            "toast.outputNoAudio",
+          )
+          : engine.lastError ===
+              "unsupported"
+            ? t(
+              "toast.outputUnsupported",
+            )
+            : t(
+              "toast.outputCancelled",
+            ),
+      );
+    return false;
+  }
+  state.audioSource =
+    "output";
+  // 切源时踢散，带来新鲜感
+  state.modeKickEnergy = 1.0;
+  savePreferences();
+  if (
+    ui
+  )
+    ui.showToast(
+      t(
+        "toast.outputDisplay",
+      ),
+    );
+  return true;
 }
 
 // --- 输入设备列表刷新（MIC 模式）---
@@ -1800,6 +1843,7 @@ function init() {
   ui = setupUI(
     {
       onSelectSource,
+      onShareSystem,
       onSelectInputDevice,
       onSelectOutputDevice,
       onTogglePattern: () => {

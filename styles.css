@@ -184,6 +184,15 @@ canvas {
   font-weight: 700;
 }
 
+/* SHARE：OUTPUT 右侧的"共享系统音频"动作按钮（虚线左边界，区别于音源切换） */
+#outputBtn {
+  border-right: none;
+}
+.share-btn {
+  border-left: 1px dashed var(--c-border);
+  color: var(--c-dim);
+}
+
 /* --- 输入设备选择（MIC 模式；虚拟回环声卡可直取系统音频） --- */
 .input-device {
   margin: 0 0 var(--sp-md);

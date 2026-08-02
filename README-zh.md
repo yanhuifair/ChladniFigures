@@ -89,6 +89,8 @@ npm start
 ## 操作
 
 - **AUDIO SOURCE**：INPUT / OUTPUT / SIMULATION / MIDI。
+- **SHARE**（OUTPUT 右侧）：直接弹出「共享系统音频」请求（屏幕共享），
+  跳过虚拟回环声卡直采——未装回环声卡，或想显式授权屏幕共享音频时很有用。
 - **SIMULATION SOUND**：开关 SIMULATION 与 MIDI 是否发出对应正弦音（让你能
   听到正在拨入的频率）。默认开启。
 - **SIMULATION**：滑条扫频；开启 SIMULATION SOUND 时同时发出对应正弦音，

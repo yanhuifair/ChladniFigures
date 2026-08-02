@@ -100,6 +100,10 @@ npm start
 ## Controls
 
 - **AUDIO SOURCE**: INPUT / OUTPUT / SIMULATION / MIDI.
+- **SHARE** (to the right of OUTPUT): pop the system-audio share request
+  (screen share) directly, skipping the virtual-loopback path — handy when no
+  loopback device is installed or you want to grant screen-share audio
+  explicitly.
 - **SIMULATION SOUND**: toggle whether SIMULATION and MIDI emit a matching sine
   tone (so you can hear the dialed-in frequency). On by default.
 - **SIMULATION**: the slider sweeps a synthetic frequency; with SIMULATION SOUND
