@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 /* ============================================================
-   Chladni Figures — 黑白极客风样式
+   Chladni Plate — 黑白极客风样式
    间距分档：--sp-lg 16 / --sp-md 8 / --sp-sm 4
    ============================================================ */
 
@@ -339,7 +339,7 @@ canvas {
 .info > * {
   margin: 0;
 }
-/* 版本号：位于左上标题（CHLADNI FIGURES BY FAIR）下方，沿用暗色等宽风格；
+/* 版本号：位于左上标题（CHLADNI PLATE BY FAIR）下方，沿用暗色等宽风格；
    与标题留出稍大间距，但不加分隔线（用户偏好无横线）。 */
 .version-label {
   margin-top: var(--sp-sm);

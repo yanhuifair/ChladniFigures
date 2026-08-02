@@ -260,7 +260,7 @@ canvas {
 ```html
 <canvas id="canvas"></canvas>
 
-<div class="title-bar">CHLADNI FIGURES</div>
+<div class="title-bar">CHLADNI PLATE</div>
 
 <div class="panel">
   <div class="panel-title">AUDIO SOURCE</div>

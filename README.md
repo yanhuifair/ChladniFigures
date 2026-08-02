@@ -1,4 +1,4 @@
-# Chladni Figures
+# Chladni Plate
 
 ![alt text](image/1.png)
 

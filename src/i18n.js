@@ -46,9 +46,9 @@ const DICT = {
   // ===================== 英文 =====================
   en: {
     // 浏览器标签 / 顶栏保存按钮
-    "app.title": "Chladni Figures",
-    "app.bigTitle": "CHLADNI FIGURES",
-    "app.brand": "CHLADNI FIGURES BY FAIR",
+    "app.title": "Chladni Plate",
+    "app.bigTitle": "CHLADNI PLATE",
+    "app.brand": "CHLADNI PLATE BY FAIR",
     "app.githubTitle": "View source code on GitHub",
     "app.githubAria": "GitHub repository",
     "app.versionLabel": "VERSION",
@@ -141,9 +141,9 @@ const DICT = {
 
   // ===================== 中文 =====================
   zh: {
-    "app.title": "克拉尼图形",
-    "app.bigTitle": "克拉尼图形",
-    "app.brand": "克拉尼图形 · 作者 FAIR",
+    "app.title": "克拉尼板",
+    "app.bigTitle": "克拉尼板",
+    "app.brand": "克拉尼板 · 作者 FAIR",
     "app.githubTitle": "在 GitHub 上查看源码",
     "app.githubAria": "GitHub 仓库",
     "app.versionLabel": "版本",
@@ -151,7 +151,7 @@ const DICT = {
     "btn.fullscreen": "全屏",
     "btn.fullscreenHint": "按 F 或点击底板切换全屏，ESC 退出",
     "perm.desc":
-      "实时音频驱动的克拉尼图形粒子模拟<br>监听电脑上其他软件播放的音乐，图形随歌实时变形",
+      "实时音频驱动的克拉尼板粒子模拟<br>监听电脑上其他软件播放的音乐，图形随歌实时变形",
     "perm.listenSys": "监听电脑播放的音乐",
     "perm.mic": "启用麦克风",
     "perm.skip": "跳过 — 手动模拟模式",
