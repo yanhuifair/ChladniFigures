@@ -1040,6 +1040,12 @@ export function setupUI(
       state.audioSource ===
         "midi",
     );
+    _toggle(
+      shareBtn,
+      "share",
+      state.audioSource ===
+        "share",
+    );
 
     // 频率滑块：仅 SIMULATION 模式显示。MIDI 为纯 MIDI 驱动，
     // 频率完全由弹奏的音符决定，不显示手动滑块（只留 MIDI INPUT 状态）。
