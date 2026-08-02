@@ -136,9 +136,9 @@ float specHeight(float u, float v, float t) {
   return hp * (1.0 - t) + hc * t;
 }
 
-// 形状遮罩：统一在"到边界的有符号距离（uv 单位）"上做内缩 + smoothstep 柔边，
-// 圆 / 三角 / 六边不再是 step 硬裁剪，边缘与正方形一样干净不锯齿。
-float shapeMask(float u, float v, float shape, float px) {
+// 形状"到边界的有符号距离"（uv 单位，内部为正）。方/圆/三角/六边统一接口，
+// 供遮罩与板缘描边共用，避免方板铺满画布时没有可见边界的问题。
+float shapeDist(float u, float v, float shape) {
   float d;
   if (shape < 0.5) {
     d = min(min(u, 1.0 - u), min(v, 1.0 - v));
@@ -162,9 +162,14 @@ float shapeMask(float u, float v, float shape, float px) {
     }
     d = dc * 0.5;                     // 居中单位 → uv 单位
   }
-  // 板缘对齐沙粒堆积边界：内缩 0.008（紧贴真实边界，仅避开最外缘场畸变），
-  // 柔边至少覆盖 1.5 像素。RIM_INSET = 0.02（particles.js / webgpu-particles.js），
-  // 故可见板缘 ≈ 0.008+0.012 = 0.02，与沙粒堆积边界对齐 → 沙粒堆在可见板缘内侧。
+  return d;
+}
+
+// 形状遮罩：在 d 上做内缩 + smoothstep 柔边（圆/三角/六边干净不锯齿）。
+// 板缘对齐沙粒堆积边界：内缩 0.008（紧贴真实边界，仅避开最外缘场畸变），
+// 柔边至少覆盖 1.5 像素。RIM_INSET = 0.02（particles.js / webgpu-particles.js），
+// 故可见板缘 ≈ 0.008+0.012 = 0.02，与沙粒堆积边界对齐 → 沙粒堆在可见板缘内侧。
+float shapeMask(float d, float px) {
   float aa = max(0.012, px * 1.5);
   return clamp((d - 0.008) / aa, 0.0, 1.0);
 }
@@ -176,7 +181,8 @@ void main() {
   float v = (uResolution.y - gl_FragCoord.y - uPlateOrigin.y) / uPlateSize;
 
   float px   = 1.0 / max(1.0, uPlateSize);
-  float mask = shapeMask(u, v, uShape, px);
+  float d    = shapeDist(u, v, uShape);
+  float mask = shapeMask(d, px);
   if (mask <= 0.0) { o = vec4(0.0); return; }
 
   float h = specHeight(u, v, uT);
@@ -188,8 +194,15 @@ void main() {
   float gain  = 0.72 + 0.38 * amp;
   float lineStrength = exp(-h * h * sharp) * gain;
 
-  // 直出白色节线 + alpha = 线强度；板外 mask=0 → 透明，露出底层黑板
-  o = vec4(1.0, 1.0, 1.0, clamp(lineStrength, 0.0, 1.0) * mask);
+  // 板缘描边：紧贴可见板缘内侧画一圈细亮线，统一所有形状的边界观感。
+  // 方板铺满画布、四周无黑边对比，原本看不到边界；此描边使其也呈现清晰方框。
+  // d=0.012 处为峰值（位于板内、对齐沙粒堆积边界），半宽 0.006 → 约 1~2 像素细线。
+  float e = (d - 0.012) / 0.006;
+  float stroke = exp(-e * e) * 0.9;
+
+  // 直出白色节线 + alpha = 节线/描边强度；板外 mask=0 → 透明，露出底层黑板
+  float a = clamp(max(lineStrength, stroke), 0.0, 1.0) * mask;
+  o = vec4(1.0, 1.0, 1.0, a);
 }`;
 
 export class GLPlateRenderer {
