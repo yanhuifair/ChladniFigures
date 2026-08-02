@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.13";
+const APP_VERSION = "2.9.14";
 
 // --- 全局状态 ---
 const state = {
@@ -2337,15 +2337,15 @@ function init() {
   // 默认音源恢复。
   // OUTPUT 走虚拟声卡直采（getUserMedia）时刷新后可自动恢复；
   // 若无虚拟声卡会兜底到 getDisplayMedia，页面加载时无用户手势必然失败 → 回退 SIM。
-  // SHARE（屏幕共享采集）同理：getDisplayMedia 必须由用户手势触发，刷新后无法自动恢复；
-  // 若直接调用会在加载时弹出共享选择框 → 一律回退 SIM，提示用户手动点 SHARE。
-  if (
+  // SHARE（屏幕共享采集）：getDisplayMedia 必须由用户手势触发，刷新后无法自动恢复；
+  // 因此保留上次选中的 SHARE tab（不回退到 SIM），仅提示用户手动点 SHARE 重新共享，
+  // 不自动调用 setSource("share")，以免加载时弹出屏幕共享选择框。
+  const skipAutoSource =
     state.audioSource ===
-    "share"
+    "share";
+  if (
+    skipAutoSource
   ) {
-    state.audioSource =
-      "sim";
-    savePreferences();
     if (
       ui
     )
@@ -2355,10 +2355,13 @@ function init() {
         ),
       );
   }
-  engine
-    .setSource(
-      state.audioSource,
-    )
+  if (
+    !skipAutoSource
+  ) {
+    engine
+      .setSource(
+        state.audioSource,
+      )
     .then(
       (
         ok,
@@ -2444,6 +2447,7 @@ function init() {
         }
       },
     );
+  }
 
   savePreferences();
   requestAnimationFrame(
