@@ -13,9 +13,9 @@
       <div class="permission-card">
         <h2 data-i18n="app.bigTitle">CHLADNI PLATE</h2>
         <p data-i18n-html="perm.desc">实时音频驱动的克拉尼板粒子模拟<br />监听电脑上其他软件播放的音乐，图形随歌实时变形</p>
-        <button id="listenSysBtn" data-i18n="perm.listenSys">监听电脑播放的音乐</button>
-        <button class="demo-link" id="startMicBtn" data-i18n="perm.mic">启用麦克风</button>
-        <button class="demo-link" id="demoBtn" data-i18n="perm.skip">跳过 — 手动模拟模式</button>
+        <button id="listenSysBtn" data-i18n="perm.listenSys" data-i18n-attr="title:hint.listenSys">监听电脑播放的音乐</button>
+        <button class="demo-link" id="startMicBtn" data-i18n="perm.mic" data-i18n-attr="title:hint.mic">启用麦克风</button>
+        <button class="demo-link" id="demoBtn" data-i18n="perm.skip" data-i18n-attr="title:hint.skip">跳过 — 手动模拟模式</button>
       </div>
     </div>
 
@@ -53,11 +53,11 @@
           </svg>
         </a>
       </div>
-      <div class="version-label" id="versionLabel">VERSION 2.7.7</div>
+      <div class="version-label" id="versionLabel">VERSION 2.7.8</div>
     </div>
 
     <!-- 右上角：保存当前图像为 PNG -->
-    <button class="save-btn" id="saveBtn" data-i18n="save.image">SAVE IMAGE</button>
+    <button class="save-btn" id="saveBtn" data-i18n="save.image" data-i18n-attr="title:hint.save">SAVE IMAGE</button>
 
     <!-- 顶部中间：全屏显示（仅底板，无其它 UI；按 F 进入，ESC 退出） -->
     <button class="fullscreen-btn" id="fullscreenBtn" data-i18n="btn.fullscreen" title="按 F 进入全屏，ESC 退出" data-i18n-attr="title:btn.fullscreenHint">FULLSCREEN</button>
@@ -66,33 +66,33 @@
     <div class="bottom-bar" id="bottomBar">
       <!-- 第一段：声源 -->
       <section class="segment seg-source">
-        <div class="seg-title" data-i18n="seg.audioSource">AUDIO SOURCE</div>
+        <div class="seg-title" data-i18n="seg.audioSource" data-i18n-attr="title:hint.audioSource">AUDIO SOURCE</div>
         <div class="audio-source">
-          <button class="audio-btn" id="micBtn" data-i18n="src.input">INPUT</button>
-          <button class="audio-btn" id="outputBtn" data-i18n="src.output">OUTPUT</button>
+          <button class="audio-btn" id="micBtn" data-i18n="src.input" data-i18n-attr="title:hint.input">INPUT</button>
+          <button class="audio-btn" id="outputBtn" data-i18n="src.output" data-i18n-attr="title:hint.output">OUTPUT</button>
           <button class="audio-btn share-btn" id="shareBtn" data-i18n="src.share" data-i18n-attr="title:src.shareTitle">SHARE</button>
-          <button class="audio-btn active" id="simBtn" data-i18n="src.simulation">SIMULATION</button>
-          <button class="audio-btn" id="midiBtn" data-i18n="src.midi">MIDI</button>
+          <button class="audio-btn active" id="simBtn" data-i18n="src.simulation" data-i18n-attr="title:hint.simulation">SIMULATION</button>
+          <button class="audio-btn" id="midiBtn" data-i18n="src.midi" data-i18n-attr="title:hint.midi">MIDI</button>
         </div>
         <div class="input-device hidden" id="inputDeviceControl">
           <div class="seg-subtitle" data-i18n="sub.inputDevice">INPUT DEVICE</div>
-          <select class="input-device-select" id="inputDeviceSelect"></select>
+          <select class="input-device-select" id="inputDeviceSelect" data-i18n-attr="title:hint.inputDevice"></select>
         </div>
         <div class="input-device hidden" id="outputDeviceControl">
           <div class="seg-subtitle" data-i18n="sub.outputDevice">OUTPUT DEVICE</div>
-          <select class="input-device-select" id="outputDeviceSelect"></select>
+          <select class="input-device-select" id="outputDeviceSelect" data-i18n-attr="title:hint.outputDevice"></select>
         </div>
         <div class="sim-control hidden" id="simControl">
           <div class="sim-header">
             <div data-i18n="sub.simInput">SIMULATED INPUT</div>
             <div class="sim-value" id="simValue">440 Hz</div>
           </div>
-          <input class="sim-slider" id="simSlider" type="range" min="20" max="50000" step="1" value="440" />
-          <button class="particle-toggle-btn active" id="simSoundToggleBtn">SIMULATION SOUND: ON</button>
+          <input class="sim-slider" id="simSlider" type="range" min="20" max="50000" step="1" value="440" data-i18n-attr="title:hint.simInput" />
+          <button class="particle-toggle-btn active" id="simSoundToggleBtn" data-i18n-attr="title:hint.simSound">SIMULATION SOUND: ON</button>
         </div>
         <div class="midi-control hidden" id="midiControl">
           <div class="seg-subtitle" data-i18n="sub.midiInput">MIDI INPUT</div>
-          <div class="midi-status" id="midiStatus">未连接</div>
+          <div class="midi-status" id="midiStatus" data-i18n-attr="title:hint.midiInput">未连接</div>
         </div>
         <!-- 音量后期增强：始终显示，不依赖具体音源 -->
         <div class="vol-boost">
@@ -100,21 +100,21 @@
             <span class="count-label" data-i18n="param.volBoost">VOL BOOST</span>
             <span class="count-value" id="volGainValue">1.0×</span>
           </div>
-          <input class="count-slider" id="volGainSlider" type="range" min="0.1" max="10" step="0.1" value="1" />
+          <input class="count-slider" id="volGainSlider" type="range" min="0.1" max="10" step="0.1" value="1" data-i18n-attr="title:hint.volBoost" />
         </div>
       </section>
 
       <!-- 第二段：pattern 参数调整 -->
       <section class="segment seg-pattern">
-        <div class="seg-title" data-i18n="seg.patternParams">PATTERN PARAMETERS</div>
+        <div class="seg-title" data-i18n="seg.patternParams" data-i18n-attr="title:hint.patternParams">PATTERN PARAMETERS</div>
         <div class="particle-toggle">
-          <button class="particle-toggle-btn" id="patternToggleBtn">PATTERN: OFF</button>
+          <button class="particle-toggle-btn" id="patternToggleBtn" data-i18n-attr="title:hint.pattern">PATTERN: OFF</button>
         </div>
         <div class="particle-toggle">
-          <button class="particle-toggle-btn active" id="particleToggleBtn">PARTICLES: ON</button>
+          <button class="particle-toggle-btn active" id="particleToggleBtn" data-i18n-attr="title:hint.particles">PARTICLES: ON</button>
         </div>
         <div class="particle-toggle">
-          <button class="particle-toggle-btn" id="collisionToggleBtn">COLLISION: OFF</button>
+          <button class="particle-toggle-btn" id="collisionToggleBtn" data-i18n-attr="title:hint.collision">COLLISION: OFF</button>
         </div>
         <div class="param-grid">
           <div class="param-cell">
@@ -122,47 +122,47 @@
               <span class="count-label" data-i18n="param.sandGrains">SAND GRAINS</span>
               <span class="count-value" id="particleCountValue">10000</span>
             </div>
-            <input class="count-slider" id="particleCountSlider" type="range" min="100" max="100000" step="100" value="10000" />
+            <input class="count-slider" id="particleCountSlider" type="range" min="100" max="100000" step="100" value="10000" data-i18n-attr="title:hint.sandGrains" />
           </div>
           <div class="param-cell">
             <div class="count-row">
               <span class="count-label" data-i18n="param.sandGrain">SAND GRAIN</span>
               <span class="count-value" id="grainValue">0.50 mm</span>
             </div>
-            <input class="count-slider" id="grainSlider" type="range" min="0.05" max="5" step="0.05" value="0.5" />
+            <input class="count-slider" id="grainSlider" type="range" min="0.05" max="5" step="0.05" value="0.5" data-i18n-attr="title:hint.sandGrain" />
           </div>
           <div class="param-cell">
             <div class="count-row">
               <span class="count-label" data-i18n="param.stiffness">STIFFNESS</span>
               <span class="count-value" id="stiffnessValue">1.0×</span>
             </div>
-            <input class="count-slider" id="stiffnessSlider" type="range" min="0.2" max="6" step="0.1" value="1" />
+            <input class="count-slider" id="stiffnessSlider" type="range" min="0.2" max="6" step="0.1" value="1" data-i18n-attr="title:hint.stiffness" />
           </div>
           <div class="param-cell">
             <div class="count-row">
               <span class="count-label" data-i18n="param.plateSide">PLATE SIDE</span>
               <span class="count-value" id="plateSizeValue">40 cm</span>
             </div>
-            <input class="count-slider" id="plateSizeSlider" type="range" min="5" max="100" step="1" value="40" />
+            <input class="count-slider" id="plateSizeSlider" type="range" min="5" max="100" step="1" value="40" data-i18n-attr="title:hint.plateSide" />
           </div>
         </div>
       </section>
 
       <!-- 第三段：信息显示 -->
       <section class="segment seg-info">
-        <div class="seg-title" data-i18n="seg.info">INFO</div>
+        <div class="seg-title" data-i18n="seg.info" data-i18n-attr="title:hint.info">INFO</div>
         <div class="info" id="info">
           <div class="info-meta">
             <div>
-              <span data-i18n="info.source">SOURCE</span>
+              <span data-i18n="info.source" data-i18n-attr="title:hint.source">SOURCE</span>
               <span id="sourceDisplay">SIMULATION</span>
             </div>
             <div>
-              <span data-i18n="info.mode">MODE</span>
+              <span data-i18n="info.mode" data-i18n-attr="title:hint.mode">MODE</span>
               <span id="modeDisplay">3×4</span>
             </div>
           </div>
-          <div class="freq-cap" data-i18n="info.frequency">FREQUENCY</div>
+          <div class="freq-cap" data-i18n="info.frequency" data-i18n-attr="title:hint.frequency">FREQUENCY</div>
           <div class="freq" id="freqDisplay">
             --
             <span>Hz</span>
@@ -180,7 +180,7 @@
               <span>120</span>
             </div>
           </div>
-          <div class="res-cap" data-i18n="info.resonance">RESONANCE</div>
+          <div class="res-cap" data-i18n="info.resonance" data-i18n-attr="title:hint.resonance">RESONANCE</div>
           <div class="freq-res" id="resonanceDisplay">--</div>
         </div>
       </section>
