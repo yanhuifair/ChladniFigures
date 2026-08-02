@@ -41,7 +41,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.7.6";
+const APP_VERSION = "2.7.7";
 
 // --- 全局状态 ---
 const state = {
@@ -1254,10 +1254,10 @@ function animate(
           clamp(
             state.desiredM,
             1,
-            15,
+            20,
           ),
         )
-      : state.currentM;
+        : state.currentM;
   const quantN =
     Math.abs(
       state.desiredN -
@@ -1268,10 +1268,10 @@ function animate(
           clamp(
             state.desiredN,
             1,
-            15,
+            20,
           ),
         )
-      : state.currentN;
+        : state.currentN;
   if (
     quantM !==
       state.currentM ||
