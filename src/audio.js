@@ -95,6 +95,7 @@ export class AudioEngine {
     this.simFreqHz = 440; // 与 state.simFreq 同步
     this.simVolume = 0.12; // 固定的温和音量（不随图形增幅变化）
     this.simSoundEnabled = true; // 是否发出 SIM/MIDI 振荡器纯音（可关闭以静音）
+    this.volGain = 1; // 后期增益（0.1~10×）：供 SIM/MIDI 虚拟响度计算使用
   }
 
   // 对外只读频谱
@@ -912,6 +913,18 @@ export class AudioEngine {
     }
   }
 
+  // 后期增益（volGain 0.1~10×）：供 SIM/MIDI 虚拟响度计算使用
+  setVolGain(
+    g,
+  ) {
+    this.volGain =
+      clamp(
+        g,
+        0.1,
+        10,
+      );
+  }
+
   // 自适应峰值跟踪（快攻慢衰），与 FFT / 纯音共用
   _track(
     peak,
@@ -939,6 +952,7 @@ export class AudioEngine {
     rawTreble,
     dominant,
     rms,
+    loudnessOverride,
   ) {
     this._peakBass =
       this._track(
@@ -974,19 +988,28 @@ export class AudioEngine {
       1,
     );
 
-    // 归一化响度：与图形共用同一套自适应峰值，
-    // 使 dB 读数与运动门控不再使用"原始 RMS"这一套独立刻度
+    // 归一化响度：loudnessOverride 由调用方提供时优先使用
+    //（SIM/MIDI 用增益合成的虚拟响度；真实音源用绝对 dBFS 基准），
+    // 否则退化为相对自适应峰值（rms / 峰值）
     this._peakRms =
       this._track(
         this._peakRms,
         rms,
       );
-    const loudness = clamp(
-      rms /
-        this._peakRms,
-      0,
-      1,
-    );
+    const loudness =
+      loudnessOverride !==
+      undefined
+        ? clamp(
+            loudnessOverride,
+            0,
+            1,
+          )
+        : clamp(
+            rms /
+              this._peakRms,
+            0,
+            1,
+          );
 
     // 节拍检测
     this._bassAvg +=
@@ -1090,12 +1113,40 @@ export class AudioEngine {
         m = 1;
       else
         t = 1;
+      // 虚拟响度：依增益（volGain 0.1~10×）映射到 60~95 dB 显示档（loud 0.5~0.79）；
+      // 振荡器静音（simSoundEnabled=false）时归零，避免 SIM/MIDI 显示恒为 120 dB 假值
+      let virtualLoud = 0;
+      if (
+        this.simSoundEnabled
+      ) {
+        const g =
+          clamp(
+            this.volGain,
+            0.1,
+            10,
+          );
+        const norm =
+          (Math.log10(
+            g,
+          ) +
+            1) /
+          2; // 0.1×→0, 1×→0.5, 10×→1
+        virtualLoud =
+          clamp(
+            0.5 +
+              norm *
+                0.29,
+            0,
+            1,
+          );
+      }
       this._applyBands(
         b,
         m,
         t,
         f,
         0.5,
+        virtualLoud,
       );
       return;
     }
@@ -1216,12 +1267,29 @@ export class AudioEngine {
           binHz
         : 0;
 
+    // 绝对 dBFS 基准：rms∈(0,1] 对应 dBFS∈(-∞,0]，映射到 loud 0(静音)~1(满幅)，
+    // 替代原来的相对自适应峰值，使同一真实音量读数稳定、不再随近期峰值漂移/虚高
+    const absLoud =
+      clamp(
+        (20 *
+          Math.log10(
+            Math.max(
+              rms,
+              1e-6,
+            ),
+          ) +
+          120) /
+          120,
+        0,
+        1,
+      );
     this._applyBands(
       rawBass,
       rawMid,
       rawTreble,
       dominant,
       rms,
+      absLoud,
     );
   }
 

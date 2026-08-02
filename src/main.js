@@ -53,7 +53,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.0";
+const APP_VERSION = "2.9.1";
 
 // --- 全局状态 ---
 const state = {
@@ -2211,6 +2211,9 @@ function init() {
             0.1,
             10,
           );
+        engine.setVolGain(
+          state.volGain,
+        );
         savePreferences();
       },
       onSimFreq: (
@@ -2252,6 +2255,9 @@ function init() {
     state.grainMm,
   );
   ui.setVolGain(
+    state.volGain,
+  );
+  engine.setVolGain(
     state.volGain,
   );
 
