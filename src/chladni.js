@@ -1335,19 +1335,19 @@ export function defaultPackedSpec() {
 
 // ============================================================
 //  图案画廊（方板退化模态目录，参考 hilbertcube/Chladni-Patterns-Generator）
-//  枚举所有唯一本征值 k = m²+n²（m,n∈[1,20], n≥m），同 k 的全部 (a,b) 对
+//  枚举所有唯一本征值 k = m²+n²（m,n∈[1,100], n≥m），同 k 的全部 (a,b) 对
 //  以 + 号线性叠加 → 真实克拉尼退化模态组合。按 k 升序编号，用户翻图册浏览。
 // ============================================================
 export const GALLERY = (() => {
   const map = new Map();
   for (
     let m = 1;
-    m <= 20;
+    m <= 100;
     m++
   ) {
     for (
       let n = m;
-      n <= 20;
+      n <= 100;
       n++
     ) {
       const k =
@@ -1444,7 +1444,7 @@ export function galleryLabel(
   };
 }
 
-// 解析 "m,n" 格式（如 "2,3"），范围限制 1..20
+// 解析 "m,n" 格式（如 "2,3"），范围限制 1..100
 export function parseSquareMode(
   mode,
 ) {
@@ -1469,11 +1469,11 @@ export function parseSquareMode(
     m <
       1 ||
     m >
-      20 ||
+      100 ||
     n <
       1 ||
     n >
-      20
+      100
   ) {
     return null;
   }
@@ -1568,14 +1568,14 @@ export function freqToMode(
   for (
     let m = 1;
     m <=
-      20;
+      100;
     m++
   ) {
     for (
       let n =
         m;
       n <=
-        20;
+        100;
       n++
     ) {
       // Skip degenerate (1,1) — no pattern
