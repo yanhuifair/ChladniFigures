@@ -1,6 +1,6 @@
 {
   "name": "chladni-plate",
-  "version": "2.9.4",
+  "version": "2.9.5",
   "description": "Real-time audio-driven Chladni plate particle visualizer",
   "type": "module",
   "scripts": {

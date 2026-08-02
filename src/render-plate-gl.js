@@ -162,9 +162,11 @@ float shapeMask(float u, float v, float shape, float px) {
     }
     d = dc * 0.5;                     // 居中单位 → uv 单位
   }
-  // 边缘内缩 0.035（避开自由边处的场畸变），柔边至少覆盖 1.5 像素
-  float aa = max(0.03, px * 1.5);
-  return clamp((d - 0.035) / aa, 0.0, 1.0);
+  // 板缘对齐沙粒堆积边界：内缩 0.008（紧贴真实边界，仅避开最外缘场畸变），
+  // 柔边至少覆盖 1.5 像素。RIM_INSET = 0.02（particles.js / webgpu-particles.js），
+  // 故可见板缘 ≈ 0.008+0.012 = 0.02，与沙粒堆积边界对齐 → 沙粒堆在可见板缘内侧。
+  float aa = max(0.012, px * 1.5);
+  return clamp((d - 0.008) / aa, 0.0, 1.0);
 }
 
 void main() {

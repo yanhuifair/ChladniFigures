@@ -37,7 +37,7 @@ import {
 // 贴边堆积：到边界距离小于此值（归一化，板半宽=1）的沙粒被吸向边缘并加速沉降
 const EDGE_BAND = 0.05;
 // 贴边定居时朝内的微小偏移，避免沙粒压在精确边界上抖动
-const RIM_INSET = 0.004;
+const RIM_INSET = 0.02;
 
 
 export class ParticleSystem {

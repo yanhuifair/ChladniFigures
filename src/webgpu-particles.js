@@ -346,7 +346,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       let ox = p.pos.x - bp.x;
       let oy = p.pos.y - bp.y;
       let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
-      p.pos = vec2<f32>(bp.x + ox / ol * 0.004, bp.y + oy / ol * 0.004);
+      p.pos = vec2<f32>(bp.x + ox / ol * 0.02, bp.y + oy / ol * 0.02);
       p.air = 0.0;
       p.vel = vec2<f32>(0.0, 0.0);
       p.vz = 0.0;
@@ -443,7 +443,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ox = p.pos.x - bp.x;
     let oy = p.pos.y - bp.y;
     let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
-    p.pos = vec2<f32>(bp.x + ox / ol * 0.004, bp.y + oy / ol * 0.004);
+    p.pos = vec2<f32>(bp.x + ox / ol * 0.02, bp.y + oy / ol * 0.02);
     p.air = 0.0;
     p.vel = vec2<f32>(0.0, 0.0);
     p.vz = 0.0;

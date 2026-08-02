@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.4";
+const APP_VERSION = "2.9.5";
 
 // --- 全局状态 ---
 const state = {
