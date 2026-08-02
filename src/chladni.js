@@ -1456,7 +1456,7 @@ export function freqToMode(
   const boundedFreq =
     clamp(
       freq,
-      0,
+      1,
       50000,
     );
   const baseFreq = 55;
