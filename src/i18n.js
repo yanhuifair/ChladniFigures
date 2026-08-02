@@ -177,8 +177,6 @@ const DICT = {
     "toast.outputManualResume":
       "System output listening needs manual restore — tap OUTPUT at bottom-left to continue.",
     "toast.midiResumeFail": "MIDI restore failed — switched back to SIMULATION.",
-    "toast.shareManualResume":
-      "System audio sharing needs a manual start — tap SHARE at bottom-left to re-enable it.",
     "toast.saveFail": "Save failed",
     "toast.saved": "Saved {name}",
   },
@@ -302,8 +300,6 @@ const DICT = {
     "toast.outputManualResume":
       "系统输出监听需手动恢复 — 点左下角 OUTPUT 继续",
     "toast.midiResumeFail": "MIDI 恢复失败 — 已切回模拟模式",
-    "toast.shareManualResume":
-      "系统音频共享需手动开启 — 点左下角 SHARE 重新共享",
     "toast.saveFail": "保存失败",
     "toast.saved": "已保存 {name}",
   },
