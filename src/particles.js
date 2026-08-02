@@ -31,7 +31,13 @@ import {
 } from "./field-grid.js";
 import {
   inShapeXY,
+  boundaryProject,
 } from "./chladni.js";
+
+// 贴边堆积：到边界距离小于此值（归一化，板半宽=1）的沙粒被吸向边缘并加速沉降
+const EDGE_BAND = 0.05;
+// 贴边定居时朝内的微小偏移，避免沙粒压在精确边界上抖动
+const RIM_INSET = 0.004;
 
 
 export class ParticleSystem {
@@ -171,6 +177,45 @@ export class ParticleSystem {
     return p;
   }
 
+  // 把越界/被推出形状的沙粒投影回最近边界点并贴边定居
+  //（替代随机重生：形成沿轮廓堆积的沙带，而非凭空出现在板内）
+  _rimSettle(
+    p,
+  ) {
+    const bp = boundaryProject(
+      p.x,
+      p.y,
+      this.shape,
+    );
+    let ox =
+      p.x -
+      bp.x;
+    let oy =
+      p.y -
+      bp.y;
+    const ol =
+      Math.hypot(
+        ox,
+        oy,
+      ) ||
+      1;
+    p.x =
+      bp.x +
+      (ox /
+        ol) *
+        RIM_INSET;
+    p.y =
+      bp.y +
+      (oy /
+        ol) *
+        RIM_INSET;
+    p.vx = 0;
+    p.vy = 0;
+    p.air = 0;
+    p.settled = 1;
+    return p;
+  }
+
   // 每帧物理更新（跳-停状态机）
   update(
     dt,
@@ -214,19 +259,59 @@ export class ParticleSystem {
           i
         ];
 
-      // 形状约束：上一帧被推出底板轮廓的沙粒，回收重生到形状内部
-      //（放在循环最前，腾空与着板两种状态都能覆盖）
+      // 形状约束 + 贴边堆积：
+      // 逃出底板轮廓的沙粒投影回最近边界并贴边定居（替代随机重生）；
+      // 板内且在边界带内的沙粒被吸向边缘、加速沉降，沿轮廓堆成沙带。
       if (
-        field.inShapeAt &&
-        !field.inShapeAt(
-          p.x,
-          p.y,
-        )
+        field.inShapeAt
       ) {
-        this._spawn(
-          p,
-        );
-        continue;
+        if (
+          !field.inShapeAt(
+            p.x,
+            p.y,
+          )
+        ) {
+          this._rimSettle(
+            p,
+          );
+          continue;
+        }
+        if (
+          field.edgeAccumulate
+        ) {
+          const bp = boundaryProject(
+            p.x,
+            p.y,
+            this.shape,
+          );
+          if (
+            bp.inside &&
+            bp.d <
+              EDGE_BAND
+          ) {
+            p.x +=
+              (
+                bp.x -
+                p.x
+              ) *
+              0.18;
+            p.y +=
+              (
+                bp.y -
+                p.y
+              ) *
+              0.18;
+            p.air *=
+              0.4;
+            p.settled =
+              Math.min(
+                1,
+                p.settled +
+                  dtClamped *
+                  2.0,
+              );
+          }
+        }
       }
 
       // ---------- 腾空阶段：弹道小跳跃 ----------
@@ -265,8 +350,20 @@ export class ParticleSystem {
           p.vx = 0;
           p.vy = 0;
         }
-        // 越界则在板内重生
+        // 越界：有形状约束则投影回边界定居（贴边堆积），否则退回方形盒内重生
         if (
+          field.inShapeAt
+        ) {
+          if (
+            !field.inShapeAt(
+              p.x,
+              p.y,
+            )
+          )
+            this._rimSettle(
+              p,
+            );
+        } else if (
           p.x <
             -plateLimit ||
           p.x >

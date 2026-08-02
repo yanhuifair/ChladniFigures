@@ -62,6 +62,8 @@ const field = {
   motionGain: 1,
   // 居中坐标是否落在形状内（粒子约束）
   inShapeAt: (x, y) => inShapeXY(x, y, curShape),
+  // 贴边堆积开关（沙粒吸向边界并沿轮廓堆积）
+  edgeAccumulate: true,
 };
 
 // 复用的渲染参数对象
@@ -168,6 +170,7 @@ self.onmessage = (e) => {
       field.vibRate = msg.vibRate;
       field.motionGain = msg.motionGain;
       field.plateLimit = msg.plateLimit;
+      field.edgeAccumulate = msg.edgeAccumulate !== false;
 
       sys.update(msg.dt, field, msg.collision);
 

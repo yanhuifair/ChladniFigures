@@ -252,6 +252,314 @@ export function inShapeXY(
   }
 }
 
+// ---------- 边界投影（贴边堆积用） ----------
+// 线段 (ax,ay)-(bx,by) 上离 (px,py) 最近的点
+function _projSeg(
+  px,
+  py,
+  ax,
+  ay,
+  bx,
+  by,
+) {
+  const abx =
+    bx -
+    ax;
+  const aby =
+    by -
+    ay;
+  const denom =
+    abx *
+      abx +
+    aby *
+      aby;
+  let t = 0;
+  if (
+    denom >
+    1e-9
+  )
+    t =
+      (
+        (
+          px -
+          ax
+        ) *
+          abx +
+        (
+          py -
+          ay
+        ) *
+          aby
+      ) /
+      denom;
+  t =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        t,
+      ),
+    );
+  return {
+    x:
+      ax +
+      abx *
+        t,
+    y:
+      ay +
+      aby *
+        t,
+  };
+}
+
+// 形状边段（圆板返回 null，单独处理）。顶点须与 inTriangle/inHexagon、GLSL/WGSL 多边形几何完全一致。
+function _shapeEdges(
+  shape,
+) {
+  if (
+    shape ===
+    "square"
+  )
+    return [
+      [
+        -1,
+        -1,
+        1,
+        -1,
+      ],
+      [
+        1,
+        -1,
+        1,
+        1,
+      ],
+      [
+        1,
+        1,
+        -1,
+        1,
+      ],
+      [
+        -1,
+        1,
+        -1,
+        -1,
+      ],
+    ];
+  if (
+    shape ===
+    "triangle"
+  ) {
+    const A = [
+      0,
+      1,
+    ];
+    const B = [
+      -0.8660254,
+      -0.5,
+    ];
+    const C = [
+      0.8660254,
+      -0.5,
+    ];
+    return [
+      [
+        ...A,
+        ...B,
+      ],
+      [
+        ...B,
+        ...C,
+      ],
+      [
+        ...C,
+        ...A,
+      ],
+    ];
+  }
+  if (
+    shape ===
+    "hexagon"
+  ) {
+    const v = [];
+    for (
+      let j = 0;
+      j < 6;
+      j++
+    ) {
+      const a =
+        j *
+        Math.PI /
+        3;
+      v.push(
+        [
+          Math.cos(
+            a,
+          ),
+          Math.sin(
+            a,
+          ),
+        ],
+      );
+    }
+    const e = [];
+    for (
+      let j = 0;
+      j < 6;
+      j++
+    ) {
+      const a = v[
+        j
+      ];
+      const b = v[
+        (
+          j +
+          1
+        ) %
+        6
+      ];
+      e.push(
+        [
+          a[
+            0
+          ],
+          a[
+            1
+          ],
+          b[
+            0
+          ],
+          b[
+            1
+          ],
+        ],
+      );
+    }
+    return e;
+  }
+  return null; // circle
+}
+
+// 返回形状边界上离 (cx,cy) 最近的点，并附带到边界的距离与内外标志。
+// 内/外点通用：圆板直接归一化到半径 1；多边形枚举边段求最近投影点。
+// 返回的 x,y 为最近边界点；d 为到边界的欧氏距离；inside 为是否落在形状内部。
+export function boundaryProject(
+  cx,
+  cy,
+  shape,
+) {
+  const edges =
+    _shapeEdges(
+      shape,
+    );
+  if (
+    !edges
+  ) {
+    // 圆板
+    const r =
+      Math.hypot(
+        cx,
+        cy,
+      );
+    if (
+      r <
+      1e-6
+    )
+      return {
+        x: 1,
+        y: 0,
+        d: 1,
+        inside: true,
+      };
+    const ix =
+      cx /
+      r;
+    const iy =
+      cy /
+      r;
+    return {
+      x: ix,
+      y: iy,
+      d: Math.abs(
+        1 -
+          r,
+      ),
+      inside:
+        r <= 1,
+    };
+  }
+  let bx = cx;
+  let by = cy;
+  let bd2 = Infinity;
+  for (
+    const e of edges
+  ) {
+    const pr = _projSeg(
+      cx,
+      cy,
+      e[
+        0
+      ],
+      e[
+        1
+      ],
+      e[
+        2
+      ],
+      e[
+        3
+      ],
+    );
+    const dx =
+      pr.x -
+      cx;
+    const dy =
+      pr.y -
+      cy;
+    const d2 =
+      dx *
+        dx +
+      dy *
+        dy;
+    if (
+      d2 <
+      bd2
+    ) {
+      bd2 = d2;
+      bx = pr.x;
+      by = pr.y;
+    }
+  }
+  return {
+    x: bx,
+    y: by,
+    d: Math.sqrt(
+      bd2,
+    ),
+    inside: inShapeXY(
+      cx,
+      cy,
+      shape,
+    ),
+  };
+}
+
+// 到边界的有符号距离：形状内部为负、外部为正（贴边吸附的带判定用）
+export function boundaryDist(
+  cx,
+  cy,
+  shape,
+) {
+  const bp = boundaryProject(
+    cx,
+    cy,
+    shape,
+  );
+  return bp.inside
+    ? -bp.d
+    : bp.d;
+}
+
 // 正方形位移场（带符号变体）。
 // sign < 0：经典差形式（反对称组合，对角为节线）
 // sign ≥ 0：和形式（cos 项相加 → 另一类真实物理图样）

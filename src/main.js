@@ -53,7 +53,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.8.1";
+const APP_VERSION = "2.8.2";
 
 // --- 全局状态 ---
 const state = {
@@ -91,6 +91,7 @@ const state = {
   showParticles: true,
   showPattern: false,
   collision: false, // 颗粒间短程斥力（解开重叠、堆成有宽度的沙带）；默认关，去掉碰撞
+  edgeAccumulate: true, // 贴边堆积：沙粒吸向边界并沿轮廓堆成沙带；默认开
 
   particleCount: 10000,
 
@@ -1607,6 +1608,8 @@ function animate(
       ),
     // 当前底板形状与「居中坐标是否落在形状内」判定（粒子约束 / 渲染裁剪共用）
     shape: state.plateShape,
+    // 贴边堆积开关（沙粒被吸向边界并沿轮廓堆积）
+    edgeAccumulate: state.edgeAccumulate,
     inShapeAt: (
       x,
       y,
@@ -1727,6 +1730,9 @@ function animate(
         collision: state.collision
           ? 1
           : 0,
+        edgeAccumulate: state.edgeAccumulate
+          ? 1
+          : 0,
         grainPx: state.grainPx,
         plateSize: state.plateSize,
       },
@@ -1781,6 +1787,8 @@ function animate(
             state.blendT,
           collision:
             state.collision,
+          edgeAccumulate:
+            state.edgeAccumulate,
           showParticles:
             state.showParticles,
           grainPx:
@@ -2139,6 +2147,11 @@ function init() {
       onToggleCollision: () => {
         state.collision =
           !state.collision;
+        savePreferences();
+      },
+      onToggleRim: () => {
+        state.edgeAccumulate =
+          !state.edgeAccumulate;
         savePreferences();
       },
       onParticleCount: (

@@ -69,6 +69,60 @@ fn inShapeXY(cx: f32, cy: f32, shape: f32) -> bool {
   return abs(cy) <= c && abs(c * cx + 0.5 * cy) <= c && abs(c * cx - 0.5 * cy) <= c;
 }
 
+// 线段 (ax,ay)-(bx,by) 上离 (px,py) 最近的点
+fn projSeg(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> vec2<f32> {
+  let abx = bx - ax;
+  let aby = by - ay;
+  let denom = abx * abx + aby * aby;
+  var t = 0.0;
+  if (denom > 1e-9) { t = ((px - ax) * abx + (py - ay) * aby) / denom; }
+  t = clamp(t, 0.0, 1.0);
+  return vec2<f32>(ax + abx * t, ay + aby * t);
+}
+
+// 形状边界上离 (px,py) 最近的点（贴边堆积用）。几何须与 inShapeXY / JS 多边形一致。
+fn boundaryProject(px: f32, py: f32, shape: f32) -> vec2<f32> {
+  if (shape < 0.5) {
+    // 正方形：盒 [-1,1]^2 最近边界点
+    return vec2<f32>(clamp(px, -1.0, 1.0), clamp(py, -1.0, 1.0));
+  }
+  if (shape < 1.5) {
+    // 圆形：归一化到半径 1
+    let r = sqrt(px * px + py * py);
+    if (r < 1e-6) { return vec2<f32>(1.0, 0.0); }
+    return vec2<f32>(px / r, py / r);
+  }
+  var best = vec2<f32>(px, py);
+  var bestD2 = 1e30;
+  if (shape < 2.5) {
+    // 等边三角形顶点 A(0,1) B(-√3/2,-0.5) C(√3/2,-0.5)
+    let A = vec2<f32>(0.0, 1.0);
+    let B = vec2<f32>(-0.8660254, -0.5);
+    let C = vec2<f32>(0.8660254, -0.5);
+    let e0 = projSeg(px, py, A.x, A.y, B.x, B.y);
+    let e1 = projSeg(px, py, B.x, B.y, C.x, C.y);
+    let e2 = projSeg(px, py, C.x, C.y, A.x, A.y);
+    let d0 = (e0.x - px) * (e0.x - px) + (e0.y - py) * (e0.y - py);
+    let d1 = (e1.x - px) * (e1.x - px) + (e1.y - py) * (e1.y - py);
+    let d2 = (e2.x - px) * (e2.x - px) + (e2.y - py) * (e2.y - py);
+    best = e0; bestD2 = d0;
+    if (d1 < bestD2) { best = e1; bestD2 = d1; }
+    if (d2 < bestD2) { best = e2; bestD2 = d2; }
+    return best;
+  }
+  // 正六边形：外接半径 1，顶点 0/60/.../300°
+  for (var j = 0; j < 6; j = j + 1) {
+    let a = f32(j) * 1.0471976;
+    let va = vec2<f32>(cos(a), sin(a));
+    let b = f32(j + 1) * 1.0471976;
+    let vb = vec2<f32>(cos(b), sin(b));
+    let pr = projSeg(px, py, va.x, va.y, vb.x, vb.y);
+    let dd = (pr.x - px) * (pr.x - px) + (pr.y - py) * (pr.y - py);
+    if (dd < bestD2) { best = pr; bestD2 = dd; }
+  }
+  return best;
+}
+
 fn hash(seed: u32) -> u32 {
   var x = seed;
   x = x ^ (x >> 16u);
@@ -245,6 +299,7 @@ struct U {
   zGrain: f32,
   repose: f32,
   shape: f32, // 底板形状索引：0 正方形 / 1 圆形 / 2 等边三角形 / 3 正六边形
+  edgeAccumulate: f32, // 贴边堆积开关：>0.5 时沙粒吸向边界并沿轮廓堆积
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -280,7 +335,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.vz = 0.0;
     p.z = 0.0;
     }
-    if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
+    // 越界：有形状约束则投影回边界定居（贴边堆积），否则退回方形盒内重生
+    if (!inShapeXY(p.pos.x, p.pos.y, u.shape)) {
+      let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
+      let ox = p.pos.x - bp.x;
+      let oy = p.pos.y - bp.y;
+      let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
+      p.pos = vec2<f32>(bp.x + ox / ol * 0.004, bp.y + oy / ol * 0.004);
+      p.air = 0.0;
+      p.vel = vec2<f32>(0.0, 0.0);
+      p.vz = 0.0;
+      p.z = 0.0;
+      p.settled = 1.0;
+      outState[i] = p;
+      return;
+    } else if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
       p.pos = spawnInShape(&seed, u.shape);
       p.air = 0.0;
       p.vel = vec2<f32>(0.0, 0.0);
@@ -350,14 +419,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.settled = max(p.settled - dt * 1.5, 0.0);
   }
 
-  // 形状约束：被推出形状外的沙粒回收重生到形状内（保持沙粒始终在板上）
+  // 贴边堆积：板内靠近边界的沙粒被吸向边缘并加速沉降，沿轮廓堆成沙带
+  if (u.edgeAccumulate > 0.5) {
+    let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
+    let dxb = bp.x - p.pos.x;
+    let dyb = bp.y - p.pos.y;
+    let db = sqrt(dxb * dxb + dyb * dyb);
+    if (inShapeXY(p.pos.x, p.pos.y, u.shape) && db < 0.05) {
+      p.pos = p.pos + vec2<f32>(dxb, dyb) * 0.18;
+      p.air = p.air * 0.4;
+      p.settled = min(p.settled + dt * 2.0, 1.0);
+    }
+  }
+
+  // 形状约束：被推出形状外的沙粒投影回最近边界并贴边定居（保持沙粒始终在板上）
   if (!inShapeXY(p.pos.x, p.pos.y, u.shape)) {
-    p.pos = spawnInShape(&seed, u.shape);
+    let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
+    let ox = p.pos.x - bp.x;
+    let oy = p.pos.y - bp.y;
+    let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
+    p.pos = vec2<f32>(bp.x + ox / ol * 0.004, bp.y + oy / ol * 0.004);
     p.air = 0.0;
     p.vel = vec2<f32>(0.0, 0.0);
     p.vz = 0.0;
     p.z = 0.0;
-    p.settled = 0.0;
+    p.settled = 1.0;
   }
 
   outState[i] = p;
@@ -1208,6 +1294,9 @@ export class WebGPUParticleSystem {
       ? params.repose
       : Z_REPOSE;
     uF[16] = this._shapeIdx; // 底板形状索引
+    uF[17] = params.edgeAccumulate != null
+      ? params.edgeAccumulate
+      : 1; // 贴边堆积（默认开）
     dev.queue.writeBuffer(
       this.uUniform,
       0,

@@ -66,6 +66,8 @@ export function setupUI(
     $("particleToggleBtn");
   const collisionToggleBtn =
     $("collisionToggleBtn");
+  const rimToggleBtn =
+    $("rimToggleBtn");
   const simSoundToggleBtn =
     $("simSoundToggleBtn");
   const particleCountSlider =
@@ -357,6 +359,15 @@ export function setupUI(
       "click",
       () =>
         handlers.onToggleCollision(),
+    );
+  }
+  if (
+    rimToggleBtn
+  ) {
+    rimToggleBtn.addEventListener(
+      "click",
+      () =>
+        handlers.onToggleRim(),
     );
   }
   simSoundToggleBtn.addEventListener(
@@ -1191,6 +1202,36 @@ export function setupUI(
             {
               label: t(
                 "label.collision",
+              ),
+            },
+          ),
+      );
+    }
+    if (
+      rimToggleBtn
+    ) {
+      _toggle(
+        rimToggleBtn,
+        "rim",
+        state.edgeAccumulate,
+      );
+      _set(
+        rimToggleBtn,
+        "rimTxt",
+        state.edgeAccumulate
+          ? t(
+            "toggle.on",
+            {
+              label: t(
+                "label.rim",
+              ),
+            },
+          )
+          : t(
+            "toggle.off",
+            {
+              label: t(
+                "label.rim",
               ),
             },
           ),
