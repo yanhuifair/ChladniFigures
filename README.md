@@ -157,4 +157,4 @@ npm start
 
 ## License
 
-[MIT](./LICENSE) © 2026 Fair
+[AGPL-3.0](./LICENSE) © 2026 Fair
