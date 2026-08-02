@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.5";
+const APP_VERSION = "2.9.6";
 
 // --- 全局状态 ---
 const state = {
@@ -879,12 +879,14 @@ function onSelectShape(
     particles.setShape(
       shape,
     );
-  // GPU 路径：重建缓冲并依新形状生成初始粒子
+  // GPU 路径：切换形状索引并依新形状重建缓冲、重生粒子
+  // （setShape 会同时更新 _shapeName/_shapeIdx 再 setCount，
+  //  仅调 setCount 会沿用旧的 _shapeName，导致沙子仍按旧形状约束）
   if (
     gpuParticles
   )
-    gpuParticles.setCount(
-      particles.num,
+    gpuParticles.setShape(
+      shape,
     );
   // 后台线程路径：通知 Worker 切换形状
   if (
