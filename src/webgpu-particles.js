@@ -221,16 +221,19 @@ fn squarePsiT(uu: f32, vv: f32, m: f32, n: f32, sgn: f32) -> f32 {
 }
 
 // D_n 对称余弦光栅（三角 3 向 / 六边 6 向）
+// 退化模态自动叠加：cos(mp)−cos(np) 与 sin(mp)−sin(np) 为简并伙伴，
+// 自动等权叠加（= 旋转 45° 的同族光栅）。与 chladni.js polyPsi 一致。
 fn polyPsiT(cx: f32, cy: f32, m: f32, n: f32, shape: f32) -> f32 {
   var s = 0.0;
   let dirs = select(6, 3, shape < 2.5);
   // 2π/3（三角 3 向）或 π/3（六边 6 向），与 chladni.js TRI_DIRS / HEX_DIRS 一致
   let dth = select(1.0471976, 2.0943951, shape < 2.5);
+  let inv = 0.70710678;
   for (var i: i32 = 0; i < 6; i = i + 1) {
     if (i >= dirs) { break; }
     let a = f32(i) * dth;
     let p = cx * cos(a) + cy * sin(a);
-    s = s + cos(m * p) - cos(n * p);
+    s = s + ((cos(m * p) - cos(n * p)) + (sin(m * p) - sin(n * p))) * inv;
   }
   return s;
 }
@@ -252,11 +255,13 @@ fn specPsi(base: i32, uu: f32, vv: f32) -> f32 {
   let cx = 2.0 * uu - 1.0;
   let cy = 2.0 * vv - 1.0;
   if (shape < 1.5) {
-    // 圆板精确本征函数：J_n(z_{n,m}·r)·cos(nθ)
+    // 圆板精确本征函数：J_n(z·r)·[cos(nθ)+sin(nθ)]/√2（nAng≥1 自动叠加简并伙伴）
     let nAng = spec[base + 27];
     let z = spec[base + 28];
     let r = length(vec2<f32>(cx, cy));
-    let ang = select(cos(nAng * atan2(cy, cx)), 1.0, nAng < 0.5);
+    let a0 = cos(nAng * atan2(cy, cx));
+    let a1 = sin(nAng * atan2(cy, cx));
+    let ang = select((a0 + a1) * 0.70710678, 1.0, nAng < 0.5);
     return besselJ(nAng, z * r) * ang * scale;
   }
   return polyPsiT(cx, cy, spec[base + 29], spec[base + 30], shape) * scale;

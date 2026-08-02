@@ -343,9 +343,6 @@ canvas {
   color: #000;
   font-weight: 700;
 }
-.gallery-control.hidden {
-  display: none;
-}
 
 /* --- 底板物理参数（PLATE PHYSICS） --- */
 .plate-physics {

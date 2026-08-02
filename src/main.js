@@ -21,10 +21,6 @@ import {
   blendedSpecGrad,
   packSpec,
   flattenSpecs,
-  // 图案画廊（方板退化模态目录）
-  galleryCount,
-  gallerySpec,
-  galleryLabel,
 } from "./chladni.js";
 import {
   AudioEngine,
@@ -53,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.3";
+const APP_VERSION = "2.9.4";
 
 // --- 全局状态 ---
 const state = {
@@ -81,9 +77,6 @@ const state = {
   // 方板叠加符号：-1 = 经典差形式 cos(mπu)cos(nπv) − cos(nπu)cos(mπv)
   //               +1 = 和形式（同一本征值的另一支退化模态，图形完全不同）
   squareSign: -1,
-  // 图案画廊：按本征值 k=m²+n² 枚举方板退化模态组合，脱离音频独立浏览
-  galleryMode: false,
-  galleryIndex: 0,
   // 每帧构建的模式描述（prev / cur）与打包给着色器的定长数组
   prevSpec: null,
   curSpec: null,
@@ -572,23 +565,6 @@ function loadPreferences() {
         p.squareSign === 1
           ? 1
           : -1,
-      galleryMode:
-        typeof p.galleryMode ===
-        "boolean"
-          ? p.galleryMode
-          : false,
-      galleryIndex:
-        Number.isFinite(
-          p.galleryIndex,
-        )
-          ? clamp(
-              Math.round(
-                p.galleryIndex,
-              ),
-              0,
-              galleryCount() - 1,
-            )
-          : 0,
       simFreq:
         Number.isFinite(
           p.simFreq,
@@ -695,10 +671,6 @@ function savePreferences() {
             state.plateShape,
           squareSign:
             state.squareSign,
-          galleryMode:
-            state.galleryMode,
-          galleryIndex:
-            state.galleryIndex,
           simFreq:
             state.simFreq,
           showParticles:
@@ -939,45 +911,10 @@ function onToggleSquareSign() {
   return state.squareSign;
 }
 
-// 图案画廊开关：开启后脱离频谱驱动，按本征值序号浏览方板退化模态组合
-function onToggleGallery() {
-  state.galleryMode =
-    !state.galleryMode;
-  state.patternDirty = true;
-  state.modeKickEnergy = 1.0;
-  savePreferences();
-  return state.galleryMode;
-}
-
-// 画廊翻页（绝对序号）
-function onGalleryIndex(
-  index,
-) {
-  const max =
-    galleryCount() - 1;
-  const next = clamp(
-    Math.round(
-      index,
-    ),
-    0,
-    max,
-  );
-  if (
-    next ===
-    state.galleryIndex
-  )
-    return state.galleryIndex;
-  state.galleryIndex = next;
-  state.patternDirty = true;
-  state.modeKickEnergy = 1.0;
-  savePreferences();
-  return state.galleryIndex;
-}
-
 // ============================================================
 //  ModeSpec 构建：一处生成 prev/cur 模式描述，三端（CPU 物理 /
 //  WebGL2 节线 / WebGPU 粒子）共用同一份数学定义，避免公式三份漂移。
-//  按 key 缓存——模式/形状/符号/画廊序号不变时不重复打包。
+//  按 key 缓存——模式/形状/符号不变时不重复打包。
 // ============================================================
 let specCacheKey = "";
 
@@ -985,14 +922,6 @@ function specFor(
   m,
   n,
 ) {
-  if (
-    state.galleryMode &&
-    state.plateShape ===
-      "square"
-  )
-    return gallerySpec(
-      state.galleryIndex,
-    );
   if (
     state.plateShape ===
     "circle"
@@ -1024,10 +953,6 @@ function syncSpecs() {
   const key = [
     state.plateShape,
     state.squareSign,
-    state.galleryMode
-      ? 1
-      : 0,
-    state.galleryIndex,
     state.prevM,
     state.prevN,
     state.currentM,
@@ -2037,10 +1962,6 @@ function init() {
       saved.plateShape;
     state.squareSign =
       saved.squareSign;
-    state.galleryMode =
-      saved.galleryMode;
-    state.galleryIndex =
-      saved.galleryIndex;
     state.simFreq =
       saved.simFreq;
     state.showParticles =
@@ -2127,10 +2048,6 @@ function init() {
       onShareSystem,
       onSelectShape,
       onToggleSquareSign,
-      onToggleGallery,
-      onGalleryIndex,
-      galleryCount,
-      galleryLabel,
       onSelectInputDevice,
       onSelectOutputDevice,
       onTogglePattern: () => {

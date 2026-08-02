@@ -644,6 +644,9 @@ export function squarePsi(
 
 // 圆形位移场（精确自由板本征函数）：ψ = J_n(z·r)·cos(nθ)
 // nAng = 角向阶（辐射节线数），nRad = 径向序号（同心节圆数）
+// 退化模态自动叠加：nAng≥1 时角向本征函数 cos(nθ) 与 sin(nθ) 简并，
+// 自动取两者等权组合（= cos(nθ−45°)），得到该简并子空间的通解；
+// nAng=0 为径向模态，无简并伙伴。
 export function circlePsi(
   cx,
   cy,
@@ -666,12 +669,17 @@ export function circlePsi(
     nRad,
   );
   const ang =
-    nAng ===
-    0
+    nAng < 0.5
       ? 1
-      : Math.cos(
-        nAng * th,
-      );
+      : (
+        Math.cos(
+          nAng * th,
+        ) +
+        Math.sin(
+          nAng * th,
+        )
+      ) /
+      Math.SQRT2;
   return (
     besselJ(
       nAng,
@@ -681,6 +689,8 @@ export function circlePsi(
 }
 
 // 三角/六边共用：D_n 对称余弦光栅之差（艺术近似）
+// 退化模态自动叠加：cos(mp)−cos(np) 与 sin(mp)−sin(np) 为简并伙伴，
+// 自动等权叠加（= 旋转 45° 的同族光栅），得到该简并子空间的通解。
 function polyPsi(
   cx,
   cy,
@@ -694,6 +704,8 @@ function polyPsi(
     "triangle"
       ? TRI_DIRS
       : HEX_DIRS;
+  const inv = 1 /
+    Math.SQRT2;
   for (
     const d of dirs
   ) {
@@ -703,12 +715,25 @@ function polyPsi(
       cy *
         d[1];
     s +=
-      Math.cos(
-        m * p,
-      ) -
-      Math.cos(
-        n * p,
-      );
+      (
+        (
+          Math.cos(
+            m * p,
+          ) -
+          Math.cos(
+            n * p,
+          )
+        ) +
+        (
+          Math.sin(
+            m * p,
+          ) -
+          Math.sin(
+            n * p,
+          )
+        )
+      ) *
+      inv;
   }
   return s;
 }
@@ -1331,117 +1356,6 @@ export function defaultPackedSpec() {
     p,
     p,
   );
-}
-
-// ============================================================
-//  图案画廊（方板退化模态目录，参考 hilbertcube/Chladni-Patterns-Generator）
-//  枚举所有唯一本征值 k = m²+n²（m,n∈[1,100], n≥m），同 k 的全部 (a,b) 对
-//  以 + 号线性叠加 → 真实克拉尼退化模态组合。按 k 升序编号，用户翻图册浏览。
-// ============================================================
-export const GALLERY = (() => {
-  const map = new Map();
-  for (
-    let m = 1;
-    m <= 100;
-    m++
-  ) {
-    for (
-      let n = m;
-      n <= 100;
-      n++
-    ) {
-      const k =
-        m *
-          m +
-        n *
-        n;
-      if (
-        !map.has(
-          k,
-        )
-      )
-        map.set(
-          k,
-          [],
-        );
-      map.get(
-        k,
-      ).push(
-        {
-          m,
-          n,
-        },
-      );
-    }
-  }
-  const ks = [
-    ...map.keys(),
-  ].sort(
-    (
-      a,
-      b,
-    ) => a - b,
-  );
-  return ks.map(
-    (
-      k,
-    ) => ({
-      k,
-      pairs: map.get(
-        k,
-      ),
-    }),
-  );
-})();
-
-export function galleryCount() {
-  return GALLERY.length;
-}
-
-export function gallerySpec(
-  i,
-) {
-  const entry = GALLERY[
-    Math.max(
-      0,
-      Math.min(
-        GALLERY.length - 1,
-        i | 0,
-      ),
-    )
-  ];
-  const terms = entry.pairs.map(
-    (
-      p,
-    ) => ({
-      m: p.m,
-      n: p.n,
-      sign: 1,
-    }),
-  );
-  return {
-    shape: "square",
-    terms,
-  };
-}
-
-export function galleryLabel(
-  i,
-) {
-  const entry = GALLERY[
-    Math.max(
-      0,
-      Math.min(
-        GALLERY.length - 1,
-        i | 0,
-      ),
-    )
-  ];
-  return {
-    k: entry.k,
-    pairs: entry.pairs,
-    count: entry.pairs.length,
-  };
 }
 
 // 解析 "m,n" 格式（如 "2,3"），范围限制 1..100

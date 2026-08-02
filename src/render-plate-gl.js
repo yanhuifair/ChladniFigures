@@ -86,15 +86,17 @@ float squarePsi(float u, float v, float m, float n, float sgn) {
 }
 
 // D_n 对称余弦光栅（三角 3 向 / 六边 6 向，与 chladni.js polyPsi 一致）
+// 退化模态自动叠加：cos(mp)−cos(np) 与 sin(mp)−sin(np) 等权叠加（旋转 45°）
 float polyPsi(float cx, float cy, float m, float n, float shape) {
   float s = 0.0;
   int dirs = shape < 2.5 ? 3 : 6;
   float dth = shape < 2.5 ? 2.0943951 : 1.0471976;  // 2π/3（三角）或 π/3（六边）
+  float inv = 0.70710678;
   for (int i = 0; i < 6; i++) {
     if (i >= dirs) break;
     float a = float(i) * dth;
     float p = cx * cos(a) + cy * sin(a);
-    s += cos(m * p) - cos(n * p);
+    s += ((cos(m * p) - cos(n * p)) + (sin(m * p) - sin(n * p))) * inv;
   }
   return s;
 }
@@ -116,11 +118,11 @@ float specPsi(int base, float u, float v) {
   float cx = 2.0 * u - 1.0;
   float cy = 2.0 * v - 1.0;
   if (shape < 1.5) {
-    // 圆板精确本征函数：J_n(z_{n,m}·r)·cos(nθ)
+    // 圆板精确本征函数：J_n(z·r)·[cos(nθ)+sin(nθ)]/√2（nAng≥1 自动叠加简并伙伴）
     float nAng = uSpec[base + 27];
     float z    = uSpec[base + 28];
     float r    = length(vec2(cx, cy));
-    float ang  = nAng < 0.5 ? 1.0 : cos(nAng * atan(cy, cx));
+    float ang  = nAng < 0.5 ? 1.0 : (cos(nAng * atan(cy, cx)) + sin(nAng * atan(cy, cx))) * 0.70710678;
     return besselJ(nAng, z * r) * ang * scale;
   }
   return polyPsi(cx, cy, uSpec[base + 29], uSpec[base + 30], shape) * scale;
