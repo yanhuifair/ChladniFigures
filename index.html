@@ -53,7 +53,7 @@
           </svg>
         </a>
       </div>
-      <div class="version-label" id="versionLabel">VERSION 2.7.8</div>
+      <div class="version-label" id="versionLabel">VERSION 2.8.0</div>
     </div>
 
     <!-- 右上角：保存当前图像为 PNG -->
@@ -107,6 +107,15 @@
       <!-- 第二段：pattern 参数调整 -->
       <section class="segment seg-pattern">
         <div class="seg-title" data-i18n="seg.patternParams" data-i18n-attr="title:hint.patternParams">PATTERN PARAMETERS</div>
+        <div class="plate-shape">
+          <div class="seg-subtitle" data-i18n="sub.plateShape" data-i18n-attr="title:hint.plateShape">PLATE SHAPE</div>
+          <div class="shape-grid">
+            <button class="shape-btn" id="shapeSquareBtn" data-shape="square" data-i18n="shape.square" data-i18n-attr="title:hint.shapeSquare">SQUARE</button>
+            <button class="shape-btn" id="shapeCircleBtn" data-shape="circle" data-i18n="shape.circle" data-i18n-attr="title:hint.shapeCircle">CIRCLE</button>
+            <button class="shape-btn" id="shapeTriangleBtn" data-shape="triangle" data-i18n="shape.triangle" data-i18n-attr="title:hint.shapeTriangle">TRIANGLE</button>
+            <button class="shape-btn" id="shapeHexagonBtn" data-shape="hexagon" data-i18n="shape.hexagon" data-i18n-attr="title:hint.shapeHexagon">HEXAGON</button>
+          </div>
+        </div>
         <div class="particle-toggle">
           <button class="particle-toggle-btn" id="patternToggleBtn" data-i18n-attr="title:hint.pattern">PATTERN: OFF</button>
         </div>
@@ -115,6 +124,21 @@
         </div>
         <div class="particle-toggle">
           <button class="particle-toggle-btn" id="collisionToggleBtn" data-i18n-attr="title:hint.collision">COLLISION: OFF</button>
+        </div>
+        <div class="square-only" id="squareOnlyControls">
+          <div class="particle-toggle">
+            <button class="particle-toggle-btn active" id="squareSignBtn" data-i18n-attr="title:hint.squareSign">SIGN: −</button>
+          </div>
+          <div class="particle-toggle">
+            <button class="particle-toggle-btn" id="galleryToggleBtn" data-i18n-attr="title:hint.gallery">GALLERY: OFF</button>
+          </div>
+          <div class="gallery-control hidden" id="galleryControl">
+            <div class="count-row">
+              <span class="count-label" id="galleryName" data-i18n="gallery.entry">MODE</span>
+              <span class="count-value" id="galleryIndexValue">1 / 183</span>
+            </div>
+            <input class="count-slider" id="gallerySlider" type="range" min="0" max="182" step="1" value="0" data-i18n-attr="title:hint.galleryIndex" />
+          </div>
         </div>
         <div class="param-grid">
           <div class="param-cell">

@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  setupUI — UI 控件绑定与状态刷新
@@ -110,6 +110,52 @@ export function setupUI(
     $("outputDeviceControl");
   const outputDeviceSelect =
     $("outputDeviceSelect");
+
+  // --- 底板形状 / 符号 / 画廊 控件 ---
+  const shapeSquareBtn =
+    $(
+      "shapeSquareBtn",
+    );
+  const shapeCircleBtn =
+    $(
+      "shapeCircleBtn",
+    );
+  const shapeTriangleBtn =
+    $(
+      "shapeTriangleBtn",
+    );
+  const shapeHexagonBtn =
+    $(
+      "shapeHexagonBtn",
+    );
+  const squareOnlyControls =
+    $(
+      "squareOnlyControls",
+    );
+  const squareSignBtn =
+    $(
+      "squareSignBtn",
+    );
+  const galleryToggleBtn =
+    $(
+      "galleryToggleBtn",
+    );
+  const galleryControl =
+    $(
+      "galleryControl",
+    );
+  const gallerySlider =
+    $(
+      "gallerySlider",
+    );
+  const galleryIndexValue =
+    $(
+      "galleryIndexValue",
+    );
+  const galleryName =
+    $(
+      "galleryName",
+    );
 
   // --- 顶部提示条（自动消失）---
   let toastTimer = null;
@@ -439,6 +485,82 @@ export function setupUI(
     );
   }
 
+  // --- 底板形状选择 ---
+  const shapeBtns = {
+    square: shapeSquareBtn,
+    circle: shapeCircleBtn,
+    triangle: shapeTriangleBtn,
+    hexagon: shapeHexagonBtn,
+  };
+  for (
+    const key in shapeBtns
+  ) {
+    const btn = shapeBtns[
+      key
+    ];
+    if (
+      btn
+    ) {
+      btn.addEventListener(
+        "click",
+        () =>
+          handlers.onSelectShape(
+            key,
+          ),
+      );
+    }
+  }
+
+  // --- 方板叠加符号切换（− 差形式 / + 和形式）---
+  if (
+    squareSignBtn
+  ) {
+    squareSignBtn.addEventListener(
+      "click",
+      () =>
+        handlers.onToggleSquareSign(),
+    );
+  }
+
+  // --- 图案画廊开关 + 滑块 ---
+  if (
+    gallerySlider
+  ) {
+    const galleryTotal = handlers.galleryCount
+      ? handlers.galleryCount()
+      : 1;
+    gallerySlider.max = String(
+      Math.max(
+        0,
+        galleryTotal - 1,
+      ),
+    );
+    gallerySlider.addEventListener(
+      "input",
+      () => {
+        const v =
+          Number(
+            gallerySlider.value,
+          );
+        if (
+          handlers.onGalleryIndex
+        )
+          handlers.onGalleryIndex(
+            v,
+          );
+      },
+    );
+  }
+  if (
+    galleryToggleBtn
+  ) {
+    galleryToggleBtn.addEventListener(
+      "click",
+      () =>
+        handlers.onToggleGallery(),
+    );
+  }
+
   // 拖拽文件到窗口：不再加载歌曲（MUSIC 源已移除），此处仅阻止默认行为
   window.addEventListener(
     "dragover",
@@ -618,15 +740,204 @@ export function setupUI(
     );
   };
 
+  // 把画廊条目格式化为可读标签（N<本征值> · <模态组合>）
+  function formatGalleryLabel(
+    entry,
+  ) {
+    if (
+      !entry
+    )
+      return "";
+    const pairs = entry.pairs
+      .map(
+        (
+          p,
+        ) => `${p.m}×${p.n}`,
+      )
+      .join(
+        "+",
+      );
+    return `N${entry.k} · ${pairs}`;
+  }
+
   function update(
     state,
   ) {
-    // 网格恒为自动：GRID 读数显示当前图案模式 (m×n)
-    _set(
-      modeDisplay,
-      "mode",
-      `${state.currentM}×${state.currentN}`,
-    );
+    // 网格恒为自动：GRID 读数显示当前图案模式 (m×n)；
+    // 方板画廊模式显示该本征值组合的描述
+    if (
+      state.galleryMode &&
+      state.plateShape ===
+        "square" &&
+      handlers.galleryLabel
+    ) {
+      _set(
+        modeDisplay,
+        "mode",
+        formatGalleryLabel(
+          handlers.galleryLabel(
+            state.galleryIndex,
+          ),
+        ),
+      );
+    } else {
+      _set(
+        modeDisplay,
+        "mode",
+        `${state.currentM}×${state.currentN}`,
+      );
+    }
+
+    // 底板形状高亮
+    if (
+      shapeSquareBtn
+    )
+      _toggle(
+        shapeSquareBtn,
+        "shpSq",
+        state.plateShape ===
+          "square",
+      );
+    if (
+      shapeCircleBtn
+    )
+      _toggle(
+        shapeCircleBtn,
+        "shpCi",
+        state.plateShape ===
+          "circle",
+      );
+    if (
+      shapeTriangleBtn
+    )
+      _toggle(
+        shapeTriangleBtn,
+        "shpTr",
+        state.plateShape ===
+          "triangle",
+      );
+    if (
+      shapeHexagonBtn
+    )
+      _toggle(
+        shapeHexagonBtn,
+        "shpHx",
+        state.plateShape ===
+          "hexagon",
+      );
+    // 方板专属控件（符号 / 画廊）：非方形隐藏
+    if (
+      squareOnlyControls
+    )
+      _hidden(
+        squareOnlyControls,
+        "sqOnly",
+        state.plateShape !==
+          "square",
+      );
+    // 符号按钮显示当前符号
+    if (
+      squareSignBtn
+    )
+      _set(
+        squareSignBtn,
+        "signTxt",
+        state.squareSign >= 0
+          ? "SIGN: +"
+          : "SIGN: −",
+      );
+    // 画廊开关
+    if (
+      galleryToggleBtn
+    ) {
+      _toggle(
+        galleryToggleBtn,
+        "galSw",
+        state.galleryMode,
+      );
+      _set(
+        galleryToggleBtn,
+        "galTxt",
+        state.galleryMode
+          ? t(
+            "toggle.on",
+            {
+              label: t(
+                "label.gallery",
+              ),
+            },
+          )
+          : t(
+            "toggle.off",
+            {
+              label: t(
+                "label.gallery",
+              ),
+            },
+          ),
+      );
+    }
+    // 画廊滑块 + 读数（仅 galleryMode 且 square 时显示）
+    if (
+      galleryControl
+    )
+      _hidden(
+        galleryControl,
+        "galCtl",
+        !(
+          state.galleryMode &&
+          state.plateShape ===
+            "square"
+        ),
+      );
+    if (
+      gallerySlider
+    ) {
+      const gc =
+        handlers.galleryCount
+          ? handlers.galleryCount()
+          : 1;
+      const maxStr = String(
+        Math.max(
+          0,
+          gc - 1,
+        ),
+      );
+      if (
+        gallerySlider.max !==
+        maxStr
+      )
+        gallerySlider.max = maxStr;
+      _set(
+        gallerySlider,
+        "galSld",
+        String(
+          state.galleryIndex,
+        ),
+        "prop",
+      );
+      if (
+        galleryIndexValue
+      )
+        _set(
+          galleryIndexValue,
+          "galIdx",
+          `${state.galleryIndex + 1} / ${gc}`,
+        );
+      if (
+        galleryName &&
+        handlers.galleryLabel
+      )
+        _set(
+          galleryName,
+          "galName",
+          formatGalleryLabel(
+            handlers.galleryLabel(
+              state.galleryIndex,
+            ),
+          ),
+        );
+    }
 
     // 音源显示名：随浏览器语言切换
     _set(

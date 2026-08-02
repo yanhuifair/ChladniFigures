@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  AudioEngine — 统一音频引擎
@@ -181,6 +181,23 @@ export class AudioEngine {
         await this.startMidi();
       // MIDI 同样用 SIM 振荡器发出对应频率的纯音（驱动板面振动）
       this.startSimTone();
+      return ok;
+    } else if (
+      mode ===
+      "share"
+    ) {
+      // SHARE 属「输入音源」：只分析不外放（防回授），走屏幕共享捕获
+      this.ensureContext();
+      if (
+        this.ctx.state ===
+        "suspended"
+      )
+        await this.ctx.resume();
+      this._setAudible(
+        false,
+      );
+      const ok =
+        await this.shareSystemAudio();
       return ok;
     }
     // sim（及未知模式）：数值模拟，发出对应频率纯音
@@ -440,7 +457,7 @@ export class AudioEngine {
       ok
     ) {
       this.mode =
-        "output";
+        "share";
       this.outputMethod =
         "display";
     }

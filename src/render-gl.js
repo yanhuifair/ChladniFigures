@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  GLParticleRenderer — WebGL2 粒子渲染（方案 A）

@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  Renderer — 画布渲染
@@ -8,7 +8,9 @@
 // ============================================================
 
 import {
-  blendedHeight,
+  packedHeight,
+  defaultPackedSpec,
+  inShapeXY,
 } from "./chladni.js";
 import {
   buildParticleRecords,
@@ -185,17 +187,27 @@ export class Renderer {
       imageData.data;
     const halfS =
       size - 1;
-    // 整数模式 + 高度场交叉淡入 → 任意时刻图形都中心对称
-    const pm =
-      state.prevM;
-    const pn =
-      state.prevN;
-    const m =
-      state.currentM;
-    const n =
-      state.currentN;
+    // 整数模式 + 高度场交叉淡入 → 任意时刻图形都中心对称。
+    // 位移场统一走打包 ModeSpec（与 WebGL / WebGPU 完全同一套公式），
+    // 圆板贝塞尔、方板符号/退化叠加、多边形光栅在 Canvas2D 回退下也一致。
+    const spec =
+      state.specPacked ||
+      (this._fallbackSpec ||= defaultPackedSpec());
     const t =
       state.blendT;
+    const shape =
+      state.plateShape ||
+      "square";
+    // 节线亮度随振幅"呼吸"（与 GLSL 同一映射）
+    const amp =
+      state.vibrationAmplitude ||
+      0;
+    const sharp =
+      140 +
+      200 * amp;
+    const gain =
+      0.72 +
+      0.38 * amp;
 
     for (
       let py = 0;
@@ -223,23 +235,31 @@ export class Renderer {
             1 - y,
           );
         const h =
-          blendedHeight(
+          packedHeight(
+            spec,
             x,
             y,
-            pm,
-            pn,
-            m,
-            n,
             t,
           );
         const lineStrength =
           Math.exp(
             -(h *
               h) *
-              220,
-          );
-        const interiorMask =
-          Math.max(
+              sharp,
+          ) * gain;
+        // 非方板：先按底板轮廓裁掉形状外的像素
+        const inside =
+          shape ===
+          "square"
+            ? true
+            : inShapeXY(
+              2 * x - 1,
+              2 * y - 1,
+              shape,
+            );
+        const interiorMask = !inside
+          ? 0
+          : Math.max(
             0,
             Math.min(
               1,
@@ -515,16 +535,10 @@ export class Renderer {
           plateSize,
           grainPx:
             state.grainPx,
-          prevM:
-            state.prevM,
-          prevN:
-            state.prevN,
-          curM:
-            state.currentM,
-          curN:
-            state.currentN,
           blendT:
             state.blendT,
+          spec:
+            state.specPacked,
         },
       );
 

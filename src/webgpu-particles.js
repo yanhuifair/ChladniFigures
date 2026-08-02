@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  WebGPUParticleSystem — 粒子物理 + 碰撞 + 渲染全在 GPU（方案 C）
@@ -13,6 +13,14 @@
 //  故可同时拿到「海量粒子」与「沙堆带观感」。
 //  若浏览器不支持 WebGPU 或任何初始化失败 → 返回 null，上层退回 WebGL2+CPU。
 // ============================================================
+
+import {
+  inShapeXY,
+  shapeIndex,
+  flattenSpecs,
+  packSpec,
+  makeSquareSpec,
+} from "./chladni.js";
 
 // 与 particles.js 保持一致的碰撞参数
 const COLLIDE_R = 0.006;
@@ -43,42 +51,22 @@ const FLOATS_PER_PARTICLE = 16;
 const FIELD_WGSL = `
 const PI: f32 = 3.14159265359;
 
-fn chladniPsi(uu: f32, vv: f32, m: f32, n: f32) -> f32 {
-  if (abs(m - n) < 0.5) {
-    return cos(m * PI * uu) * cos(n * PI * vv);
+// 位移场已统一由 SPEC_WGSL 的 specPsi / specHeight / specGrad 提供
+// （见 ModeSpec 打包模型），此处只保留形状判定与随机数等通用工具。
+
+fn inShapeXY(cx: f32, cy: f32, shape: f32) -> bool {
+  if (shape < 0.5) { return abs(cx) <= 1.0 && abs(cy) <= 1.0; }
+  if (shape < 1.5) { return cx * cx + cy * cy <= 1.0; }
+  let c = 0.8660254;
+  if (shape < 2.5) {
+    let d1 = (cx - (-c)) * (1.0 - (-0.5)) - (0.0 - (-c)) * (cy - (-0.5));
+    let d2 = (cx - c) * ((-0.5) - (-0.5)) - ((-c) - c) * (cy - (-0.5));
+    let d3 = (cx - 0.0) * ((-0.5) - 1.0) - (c - 0.0) * (cy - 1.0);
+    let hasNeg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let hasPos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    return !(hasNeg && hasPos);
   }
-  return cos(n * PI * uu) * cos(m * PI * vv) - cos(m * PI * uu) * cos(n * PI * vv);
-}
-
-fn blendedHeight(uu: f32, vv: f32, pm: f32, pn: f32, cm: f32, cn: f32, t: f32) -> f32 {
-  let hc = abs(chladniPsi(uu, vv, cm, cn));
-  if (t >= 1.0) { return hc; }
-  let hp = abs(chladniPsi(uu, vv, pm, pn));
-  return hp * (1.0 - t) + hc * t;
-}
-
-fn rawGrad(uu: f32, vv: f32, m: f32, n: f32) -> vec2<f32> {
-  if (abs(m - n) < 0.5) {
-    let au = cos(m * PI * uu);
-    let bv = cos(n * PI * vv);
-    let auP = -m * PI * sin(m * PI * uu);
-    let bvP = -n * PI * sin(n * PI * vv);
-    return vec2<f32>(auP * bv, au * bvP);
-  }
-  let dx = PI * (-n * sin(n * PI * uu) * cos(m * PI * vv) + m * sin(m * PI * uu) * cos(n * PI * vv));
-  let dy = PI * (-m * cos(n * PI * uu) * sin(m * PI * vv) + n * cos(m * PI * uu) * sin(n * PI * vv));
-  return vec2<f32>(dx, dy);
-}
-
-fn gradAt(uu: f32, vv: f32, pm: f32, pn: f32, cm: f32, cn: f32, t: f32) -> vec2<f32> {
-  let psic = chladniPsi(uu, vv, cm, cn);
-  let gc = rawGrad(uu, vv, cm, cn);
-  let sc = select(-1.0, 1.0, psic >= 0.0);
-  if (t >= 1.0) { return vec2<f32>(sc * gc.x, sc * gc.y); }
-  let psip = chladniPsi(uu, vv, pm, pn);
-  let gp = rawGrad(uu, vv, pm, pn);
-  let sp = select(-1.0, 1.0, psip >= 0.0);
-  return vec2<f32>(sp * gp.x * (1.0 - t) + sc * gc.x * t, sp * gp.y * (1.0 - t) + sc * gc.y * t);
+  return abs(cy) <= c && abs(c * cx + 0.5 * cy) <= c && abs(c * cx - 0.5 * cy) <= c;
 }
 
 fn hash(seed: u32) -> u32 {
@@ -94,6 +82,18 @@ fn hash(seed: u32) -> u32 {
 fn rnd(s: ptr<function, u32>) -> f32 {
   *s = hash(*s);
   return f32(*s) * 2.3283064365386963e-10;
+}
+
+// 在形状内部随机重生（拒绝采样），用于越界/越形粒子的回收
+fn spawnInShape(s: ptr<function, u32>, shape: f32) -> vec2<f32> {
+  for (var i = 0; i < 24; i = i + 1) {
+    let x = (rnd(s) * 2.0 - 1.0) * 0.98;
+    let y = (rnd(s) * 2.0 - 1.0) * 0.98;
+    if (inShapeXY(x, y, shape)) {
+      return vec2<f32>(x, y);
+    }
+  }
+  return vec2<f32>(0.0, 0.0);
 }
 `;
 
@@ -117,8 +117,116 @@ struct P {
 };
 `;
 
+// --- 打包模式描述驱动的位移场（与 chladni.js specPsi / render-plate-gl.js 同源）---
+// spec 布局（每段 31 个 f32，prev 在 0、cur 在 31，共 62）：
+//   [0] shapeIdx  [1] sqLen  [2] scale
+//   [3..10] sqM   [11..18] sqN   [19..26] sqS
+//   [27] cirN  [28] cirZ  [29] polyM  [30] polyN
+const SPEC_WGSL = `
+@group(0) @binding(3) var<storage, read> spec: array<f32, 62>;
+
+// 第一类贝塞尔函数 J_n(x)：Miller 向下递推（与 bessel.js besselJ 等价）。
+// f32 动态范围有限 → 递推幅值超阈值时整体等比缩小，不影响最终比值。
+fn besselJ(nf: f32, x: f32) -> f32 {
+  let n = i32(nf + 0.5);
+  let ax = abs(x);
+  if (ax < 1e-6) { return select(0.0, 1.0, n == 0); }
+  var jPrev = 0.0;
+  var jCur = 1.0;
+  var jn = 0.0;
+  var sum = 0.0;
+  let invX = 2.0 / ax;
+  for (var k: i32 = 52; k >= 1; k = k - 1) {
+    let jNew = invX * f32(k) * jCur - jPrev;
+    let idx = k - 1;
+    if (idx == n) { jn = jNew; }
+    if (idx == 0) {
+      sum = sum + jNew;
+    } else if ((idx & 1) == 0) {
+      sum = sum + 2.0 * jNew;
+    }
+    jPrev = jCur;
+    jCur = jNew;
+    if (abs(jCur) > 1e18) {
+      jCur = jCur * 1e-18;
+      jPrev = jPrev * 1e-18;
+      jn = jn * 1e-18;
+      sum = sum * 1e-18;
+    }
+  }
+  if (n == 0) { jn = jCur; }
+  return jn / sum;
+}
+
+// 方板单项位移场（sign≥0 取和形式，否则经典差形式）
+fn squarePsiT(uu: f32, vv: f32, m: f32, n: f32, sgn: f32) -> f32 {
+  if (abs(m - n) < 0.5) { return cos(m * PI * uu) * cos(n * PI * vv); }
+  let a = cos(n * PI * uu) * cos(m * PI * vv);
+  let b = cos(m * PI * uu) * cos(n * PI * vv);
+  return select(a - b, a + b, sgn >= 0.0);
+}
+
+// D_n 对称余弦光栅（三角 3 向 / 六边 6 向）
+fn polyPsiT(cx: f32, cy: f32, m: f32, n: f32, shape: f32) -> f32 {
+  var s = 0.0;
+  let dirs = select(6, 3, shape < 2.5);
+  // 2π/3（三角 3 向）或 π/3（六边 6 向），与 chladni.js TRI_DIRS / HEX_DIRS 一致
+  let dth = select(1.0471976, 2.0943951, shape < 2.5);
+  for (var i: i32 = 0; i < 6; i = i + 1) {
+    if (i >= dirs) { break; }
+    let a = f32(i) * dth;
+    let p = cx * cos(a) + cy * sin(a);
+    s = s + cos(m * p) - cos(n * p);
+  }
+  return s;
+}
+
+// 按打包描述求位移场 ψ（base = 0 取 prev，31 取 cur），已含归一化尺度
+fn specPsi(base: i32, uu: f32, vv: f32) -> f32 {
+  let shape = spec[base];
+  let scale = spec[base + 2];
+  if (shape < 0.5) {
+    let len = i32(spec[base + 1] + 0.5);
+    var s = 0.0;
+    for (var i: i32 = 0; i < 8; i = i + 1) {
+      if (i >= len) { break; }
+      let sgn = spec[base + 19 + i];
+      s = s + sgn * squarePsiT(uu, vv, spec[base + 3 + i], spec[base + 11 + i], sgn);
+    }
+    return s * scale;
+  }
+  let cx = 2.0 * uu - 1.0;
+  let cy = 2.0 * vv - 1.0;
+  if (shape < 1.5) {
+    // 圆板精确本征函数：J_n(z_{n,m}·r)·cos(nθ)
+    let nAng = spec[base + 27];
+    let z = spec[base + 28];
+    let r = length(vec2<f32>(cx, cy));
+    let ang = select(cos(nAng * atan2(cy, cx)), 1.0, nAng < 0.5);
+    return besselJ(nAng, z * r) * ang * scale;
+  }
+  return polyPsiT(cx, cy, spec[base + 29], spec[base + 30], shape) * scale;
+}
+
+fn specHeight(uu: f32, vv: f32, t: f32) -> f32 {
+  let hc = abs(specPsi(31, uu, vv));
+  if (t >= 1.0) { return hc; }
+  let hp = abs(specPsi(0, uu, vv));
+  return hp * (1.0 - t) + hc * t;
+}
+
+fn specGrad(uu: f32, vv: f32, t: f32) -> vec2<f32> {
+  let e = 1e-3;
+  let hxp = specHeight(uu + e, vv, t);
+  let hxm = specHeight(uu - e, vv, t);
+  let hyp = specHeight(uu, vv + e, t);
+  let hym = specHeight(uu, vv - e, t);
+  return vec2<f32>((hxp - hxm) / (2.0 * e), (hyp - hym) / (2.0 * e));
+}
+`;
+
 // --- sim 计算着色器：逐粒子状态机 ---
-const SIM_WGSL = FIELD_WGSL + P_STRUCT_WGSL + `
+const SIM_WGSL = FIELD_WGSL + P_STRUCT_WGSL + SPEC_WGSL + `
 struct U {
   dt: f32,
   plateLimit: f32,
@@ -136,6 +244,7 @@ struct U {
   num: u32,
   zGrain: f32,
   repose: f32,
+  shape: f32, // 底板形状索引：0 正方形 / 1 圆形 / 2 等边三角形 / 3 正六边形
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -172,7 +281,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.z = 0.0;
     }
     if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
-      p.pos = vec2<f32>((rnd(&seed) * 2.0 - 1.0) * 0.98, (rnd(&seed) * 2.0 - 1.0) * 0.98);
+      p.pos = spawnInShape(&seed, u.shape);
       p.air = 0.0;
       p.vel = vec2<f32>(0.0, 0.0);
       p.vz = 0.0;
@@ -185,7 +294,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let uu = (p.pos.x + 1.0) * 0.5;
   let vv = (p.pos.y + 1.0) * 0.5;
-  let h = blendedHeight(uu, vv, u.prevM, u.prevN, u.curM, u.curN, u.blendT);
+  let h = specHeight(uu, vv, u.blendT);
   let height = abs(h);
   let xc = 2.0 * uu - 1.0;
   let yc = 2.0 * vv - 1.0;
@@ -200,7 +309,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (shake > threshold) {
     let tossProb = (shake - threshold) * 18.0 * vibRate * dt / inertia;
     if (rnd(&seed) < tossProb) {
-      let g = gradAt(uu, vv, u.prevM, u.prevN, u.curM, u.curN, u.blendT);
+      let g = specGrad(uu, vv, u.blendT);
       var gx = -g.x;
       var gy = -g.y;
       let glen = sqrt(gx * gx + gy * gy);
@@ -239,6 +348,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.settled = min(p.settled + dt * 0.9, 1.0);
   } else {
     p.settled = max(p.settled - dt * 1.5, 0.0);
+  }
+
+  // 形状约束：被推出形状外的沙粒回收重生到形状内（保持沙粒始终在板上）
+  if (!inShapeXY(p.pos.x, p.pos.y, u.shape)) {
+    p.pos = spawnInShape(&seed, u.shape);
+    p.air = 0.0;
+    p.vel = vec2<f32>(0.0, 0.0);
+    p.vz = 0.0;
+    p.z = 0.0;
+    p.settled = 0.0;
   }
 
   outState[i] = p;
@@ -542,6 +661,9 @@ export class WebGPUParticleSystem {
     this.ready = false;
     this.cur = 0; // 当前状态所在缓冲下标（0/1/2 轮转）
     this.frame = 0;
+    // 底板形状（索引，与 chladni.js shapeIndex 一致）：0 正方形 / 1 圆形 / 2 等边三角形 / 3 正六边形
+    this._shapeName = "square";
+    this._shapeIdx = 0;
     this.W = canvas.width || 1;
     this.H = canvas.height || 1;
     // 残影纹理（持久拖尾，对应 CPU 路径的 0.85/0.92 衰减）
@@ -606,6 +728,31 @@ export class WebGPUParticleSystem {
       64,
       UNIFORM | COPY_DST,
     );
+    // 打包模式描述（62 个 f32 = 248 字节，对齐到 256）：
+    // 走 storage buffer 而非 uniform，避免 uniform 数组 16 字节步长限制。
+    this.uSpec = makeBuf(
+      dev,
+      256,
+      STORAGE | COPY_DST,
+    );
+    // 兜底 spec：方板 3×4 差形式，避免首帧 params.spec 缺失时读到全 0
+    this._fallbackSpec =
+      flattenSpecs(
+        packSpec(
+          makeSquareSpec(
+            3,
+            4,
+            -1,
+          ),
+        ),
+        packSpec(
+          makeSquareSpec(
+            3,
+            4,
+            -1,
+          ),
+        ),
+      );
 
     this._initData();
   }
@@ -806,9 +953,10 @@ export class WebGPUParticleSystem {
     );
   }
 
-  // 生成初始粒子数据（与 particles.js _spawn 一致）
+  // 生成初始粒子数据（与 particles.js _spawn 一致，并按当前形状在形状内重生）
   _initData() {
     const arr = [];
+    const shape = this._shapeName;
     for (
       let i = 0;
       i < this.num;
@@ -816,18 +964,37 @@ export class WebGPUParticleSystem {
     ) {
       // 统一沙粒大小：取消随机粒径，全部 sizeF=1.0（mass=1，碰撞/运动一致）。
       const sizeF = 1.0;
+      // 在形状内部拒绝采样，保证沙粒不会一出生就落在板外
+      let x = 0;
+      let y = 0;
+      for (
+        let t = 0;
+        t < 40;
+        t++
+      ) {
+        x =
+          (Math.random() *
+            2 -
+            1) *
+          0.98;
+        y =
+          (Math.random() *
+            2 -
+            1) *
+          0.98;
+        if (
+          inShapeXY(
+            x,
+            y,
+            shape,
+          )
+        )
+          break;
+      }
       arr.push(
         {
-          x:
-            (Math.random() *
-              2 -
-              1) *
-            0.98,
-          y:
-            (Math.random() *
-              2 -
-              1) *
-            0.98,
+          x,
+          y,
           vx: 0,
           vy: 0,
           air: Math.random() * 0.12,
@@ -891,6 +1058,19 @@ export class WebGPUParticleSystem {
       COPY_DST,
     );
     this._initData();
+  }
+
+  // 切换底板形状：记录形状索引并依新形状重新生成初始粒子
+  setShape(
+    shape,
+  ) {
+    this._shapeName = shape;
+    this._shapeIdx = shapeIndex(
+      shape,
+    );
+    this.setCount(
+      this.num,
+    );
   }
 
   resize(
@@ -1027,10 +1207,24 @@ export class WebGPUParticleSystem {
     uF[15] = params.repose != null
       ? params.repose
       : Z_REPOSE;
+    uF[16] = this._shapeIdx; // 底板形状索引
     dev.queue.writeBuffer(
       this.uUniform,
       0,
       uBuf,
+    );
+
+    // 打包的 prev/cur 模式描述（圆板贝塞尔本征值、方板退化叠加项都在里面）
+    const specArr =
+      params.spec &&
+      params.spec.length >=
+        62
+        ? params.spec
+        : this._fallbackSpec;
+    dev.queue.writeBuffer(
+      this.uSpec,
+      0,
+      specArr,
     );
 
     const cBuf = new ArrayBuffer(
@@ -1099,6 +1293,12 @@ export class WebGPUParticleSystem {
             binding: 2,
             resource: {
               buffer: this.buffers[n0],
+            },
+          },
+          {
+            binding: 3,
+            resource: {
+              buffer: this.uSpec,
             },
           },
         ],

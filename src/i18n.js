@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  i18n.js — 多语言支持（按浏览器语言自动选择）
@@ -77,6 +77,13 @@ const DICT = {
     "sub.outputDevice": "OUTPUT DEVICE",
     "sub.simInput": "SIMULATED INPUT",
     "sub.midiInput": "MIDI INPUT",
+    "sub.plateShape": "PLATE SHAPE",
+    "shape.square": "SQUARE",
+    "shape.circle": "CIRCLE",
+    "shape.triangle": "TRIANGLE",
+    "shape.hexagon": "HEXAGON",
+    "label.gallery": "GALLERY",
+    "gallery.entry": "MODE",
     // 参数标签
     "param.sandGrains": "SAND GRAINS",
     "param.plateSide": "PLATE SIDE",
@@ -103,6 +110,14 @@ const DICT = {
     "hint.midiInput": "Status of the connected MIDI device",
     "hint.volBoost": "Multiply the analyzed volume before visualization",
     "hint.patternParams": "Tune the plate and the sand",
+    "hint.plateShape": "Choose the plate geometry",
+    "hint.shapeSquare": "Square plate — classic cos(mπu)cos(nπv) modes",
+    "hint.shapeCircle": "Circular plate — Bessel Jₙ(z·r)cos(nθ) modes",
+    "hint.shapeTriangle": "Equilateral triangle plate — grating approximation",
+    "hint.shapeHexagon": "Regular hexagon plate — grating approximation",
+    "hint.squareSign": "Switch the square sign: − difference form / + sum form",
+    "hint.gallery": "Browse the square degenerate-mode gallery",
+    "hint.galleryIndex": "Drag to browse the gallery by eigenvalue index",
     "hint.pattern": "Show or hide the guide nodal lines",
     "hint.particles": "Show or hide the sand grains",
     "hint.collision": "Let grains repel each other so they pile into bands",
@@ -199,6 +214,13 @@ const DICT = {
     "sub.outputDevice": "输出设备",
     "sub.simInput": "模拟输入",
     "sub.midiInput": "MIDI 输入",
+    "sub.plateShape": "底板形状",
+    "shape.square": "正方形",
+    "shape.circle": "圆形",
+    "shape.triangle": "三角形",
+    "shape.hexagon": "六边形",
+    "label.gallery": "画廊",
+    "gallery.entry": "模式",
     "param.sandGrains": "沙粒数量",
     "param.plateSide": "底板边长",
     "param.stiffness": "底板硬度",
@@ -223,6 +245,14 @@ const DICT = {
     "hint.midiInput": "已连接 MIDI 设备的状态",
     "hint.volBoost": "在可视化前放大分析到的音量",
     "hint.patternParams": "调整底板与沙粒",
+    "hint.plateShape": "选择底板形状",
+    "hint.shapeSquare": "方形板——经典 cos(mπu)cos(nπv) 模态",
+    "hint.shapeCircle": "圆形板——贝塞尔 Jₙ(z·r)cos(nθ) 模态",
+    "hint.shapeTriangle": "等边三角形板——光栅近似",
+    "hint.shapeHexagon": "正六边形板——光栅近似",
+    "hint.squareSign": "切换方板符号：− 差形式 / + 和形式",
+    "hint.gallery": "浏览方板退化模态画廊",
+    "hint.galleryIndex": "拖动以按本征值序号浏览画廊",
     "hint.pattern": "显示或隐藏引导节线",
     "hint.particles": "显示或隐藏沙粒",
     "hint.collision": "让沙粒互相排斥，沿节线堆成沙带",

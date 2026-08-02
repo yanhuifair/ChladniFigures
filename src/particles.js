@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  ParticleSystem — 沙粒粒子系统（跳-停走动模型）
@@ -29,6 +29,9 @@ import {
   sampleGrad as _sampleGrad,
   gradOut as _gradOut,
 } from "./field-grid.js";
+import {
+  inShapeXY,
+} from "./chladni.js";
 
 
 export class ParticleSystem {
@@ -37,6 +40,8 @@ export class ParticleSystem {
   ) {
     this.num = numParticles;
     this.particles = [];
+    // 底板形状：square / circle / triangle / hexagon（切换时重生到形状内）
+    this.shape = "square";
     // 离屏累计缓冲交给 Renderer 管理，这里只存粒子状态
     this._scratch = null;
 
@@ -93,20 +98,47 @@ export class ParticleSystem {
     this.reset();
   }
 
-  // 单个粒子重生：坐标 [-1,1]，初始随机小跳，沉降度 0
+  // 切换底板形状：记录形状并依新形状重新生成粒子（保证全部在板内）
+  setShape(
+    shape,
+  ) {
+    this.shape = shape;
+    this.reset();
+  }
+
+  // 单个粒子重生：坐标 [-1,1]，初始随机小跳，沉降度 0；
+  // 依当前形状在形状内部拒绝采样，避免沙粒一出生就落在板外
   _spawn(
     p = {},
   ) {
-    p.x =
-      (Math.random() *
-        2 -
-        1) *
-      0.98;
-    p.y =
-      (Math.random() *
-        2 -
-        1) *
-      0.98;
+    let x = 0;
+    let y = 0;
+    for (
+      let t = 0;
+      t < 40;
+      t++
+    ) {
+      x =
+        (Math.random() *
+          2 -
+          1) *
+        0.98;
+      y =
+        (Math.random() *
+          2 -
+          1) *
+        0.98;
+      if (
+        inShapeXY(
+          x,
+          y,
+          this.shape,
+        )
+      )
+        break;
+    }
+    p.x = x;
+    p.y = y;
     // vx/vy 仅在腾空期间非零（渲染端用速度调制亮度/拖尾）
     p.vx = 0;
     p.vy = 0;
@@ -181,6 +213,21 @@ export class ParticleSystem {
         this.particles[
           i
         ];
+
+      // 形状约束：上一帧被推出底板轮廓的沙粒，回收重生到形状内部
+      //（放在循环最前，腾空与着板两种状态都能覆盖）
+      if (
+        field.inShapeAt &&
+        !field.inShapeAt(
+          p.x,
+          p.y,
+        )
+      ) {
+        this._spawn(
+          p,
+        );
+        continue;
+      }
 
       // ---------- 腾空阶段：弹道小跳跃 ----------
       if (

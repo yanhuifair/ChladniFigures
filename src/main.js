@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  main.js — 应用编排与渲染主循环
@@ -8,11 +8,23 @@
 
 import {
   clamp,
-  blendedHeight,
-  blendedHeightGradient,
   centerExcitation,
   freqToMode,
   modeToFreq,
+  inShapeXY,
+  PLATE_SHAPES,
+  // 统一模式描述（ModeSpec）：一处定义位移场，JS / GLSL / WGSL 三端共用
+  makeSquareSpec,
+  makeCircleSpec,
+  makePolySpec,
+  blendedSpecHeight,
+  blendedSpecGrad,
+  packSpec,
+  flattenSpecs,
+  // 图案画廊（方板退化模态目录）
+  galleryCount,
+  gallerySpec,
+  galleryLabel,
 } from "./chladni.js";
 import {
   AudioEngine,
@@ -41,7 +53,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.7.8";
+const APP_VERSION = "2.8.0";
 
 // --- 全局状态 ---
 const state = {
@@ -64,6 +76,18 @@ const state = {
 
   selectedMode: "auto",
   audioSource: "sim",
+  plateShape: "square", // 底板形状：square / circle / triangle / hexagon
+
+  // 方板叠加符号：-1 = 经典差形式 cos(mπu)cos(nπv) − cos(nπu)cos(mπv)
+  //               +1 = 和形式（同一本征值的另一支退化模态，图形完全不同）
+  squareSign: -1,
+  // 图案画廊：按本征值 k=m²+n² 枚举方板退化模态组合，脱离音频独立浏览
+  galleryMode: false,
+  galleryIndex: 0,
+  // 每帧构建的模式描述（prev / cur）与打包给着色器的定长数组
+  prevSpec: null,
+  curSpec: null,
+  specPacked: null,
   showParticles: true,
   showPattern: false,
   collision: false, // 颗粒间短程斥力（解开重叠、堆成有宽度的沙带）；默认关，去掉碰撞
@@ -108,10 +132,12 @@ const STORAGE_KEY =
   "chladni-figures-preferences";
 // mic = 系统输入（麦克风等输入设备）；output = 系统输出（电脑正在播放的声音）
 // midi = 外接 MIDI 控制器；sim = 数值模拟（可听纯音）
+// share = 屏幕共享捕获的系统音频（与 mic 同属「输入音源」：只分析不外放）
 const VALID_SOURCES = new Set(
   [
     "mic",
     "output",
+    "share",
     "sim",
     "midi",
   ],
@@ -535,6 +561,33 @@ function loadPreferences() {
               "sys"
             ? "output" // 旧偏好迁移：sys → output
             : "sim",
+      plateShape:
+        PLATE_SHAPES.indexOf(
+          p.plateShape,
+        ) >= 0
+          ? p.plateShape
+          : "square",
+      squareSign:
+        p.squareSign === 1
+          ? 1
+          : -1,
+      galleryMode:
+        typeof p.galleryMode ===
+        "boolean"
+          ? p.galleryMode
+          : false,
+      galleryIndex:
+        Number.isFinite(
+          p.galleryIndex,
+        )
+          ? clamp(
+              Math.round(
+                p.galleryIndex,
+              ),
+              0,
+              galleryCount() - 1,
+            )
+          : 0,
       simFreq:
         Number.isFinite(
           p.simFreq,
@@ -637,6 +690,14 @@ function savePreferences() {
         {
           audioSource:
             state.audioSource,
+          plateShape:
+            state.plateShape,
+          squareSign:
+            state.squareSign,
+          galleryMode:
+            state.galleryMode,
+          galleryIndex:
+            state.galleryIndex,
           simFreq:
             state.simFreq,
           showParticles:
@@ -808,7 +869,8 @@ async function onShareSystem() {
     return false;
   }
   state.audioSource =
-    "output";
+    "share";
+  // 共享系统音频属「输入音源」：只分析不外放（防回授）
   // 切源时踢散，带来新鲜感
   state.modeKickEnergy = 1.0;
   savePreferences();
@@ -821,6 +883,181 @@ async function onShareSystem() {
       ),
     );
   return true;
+}
+
+// 底板形状切换（正方形 / 圆形 / 等边三角形 / 正六边形）：
+// 形状只影响位移场与粒子约束，切换时让粒子在新形状内重生并踢散。
+function onSelectShape(
+  shape,
+) {
+  if (
+    PLATE_SHAPES.indexOf(
+      shape,
+    ) < 0
+  )
+    return;
+  state.plateShape = shape;
+  state.modeKickEnergy = 1.0;
+  savePreferences();
+  // CPU 回退路径：粒子系统按新形状重生
+  if (
+    particles
+  )
+    particles.setShape(
+      shape,
+    );
+  // GPU 路径：重建缓冲并依新形状生成初始粒子
+  if (
+    gpuParticles
+  )
+    gpuParticles.setCount(
+      particles.num,
+    );
+  // 后台线程路径：通知 Worker 切换形状
+  if (
+    particleWorker
+  )
+    particleWorker.postMessage(
+      {
+        type: "shape",
+        shape,
+      },
+    );
+  return true;
+}
+
+// 方板叠加符号切换（− 差形式 / + 和形式）：同一 (m,n) 的两支退化模态图形完全不同
+function onToggleSquareSign() {
+  state.squareSign =
+    state.squareSign >= 0
+      ? -1
+      : 1;
+  state.patternDirty = true;
+  state.modeKickEnergy = 1.0;
+  savePreferences();
+  return state.squareSign;
+}
+
+// 图案画廊开关：开启后脱离频谱驱动，按本征值序号浏览方板退化模态组合
+function onToggleGallery() {
+  state.galleryMode =
+    !state.galleryMode;
+  state.patternDirty = true;
+  state.modeKickEnergy = 1.0;
+  savePreferences();
+  return state.galleryMode;
+}
+
+// 画廊翻页（绝对序号）
+function onGalleryIndex(
+  index,
+) {
+  const max =
+    galleryCount() - 1;
+  const next = clamp(
+    Math.round(
+      index,
+    ),
+    0,
+    max,
+  );
+  if (
+    next ===
+    state.galleryIndex
+  )
+    return state.galleryIndex;
+  state.galleryIndex = next;
+  state.patternDirty = true;
+  state.modeKickEnergy = 1.0;
+  savePreferences();
+  return state.galleryIndex;
+}
+
+// ============================================================
+//  ModeSpec 构建：一处生成 prev/cur 模式描述，三端（CPU 物理 /
+//  WebGL2 节线 / WebGPU 粒子）共用同一份数学定义，避免公式三份漂移。
+//  按 key 缓存——模式/形状/符号/画廊序号不变时不重复打包。
+// ============================================================
+let specCacheKey = "";
+
+function specFor(
+  m,
+  n,
+) {
+  if (
+    state.galleryMode &&
+    state.plateShape ===
+      "square"
+  )
+    return gallerySpec(
+      state.galleryIndex,
+    );
+  if (
+    state.plateShape ===
+    "circle"
+  )
+    // 圆板：角向阶数 n、径向序号 m（贝塞尔 J_n(z_{n,m}·r)·cos(nθ)）
+    return makeCircleSpec(
+      n,
+      m,
+    );
+  if (
+    state.plateShape ===
+      "triangle" ||
+    state.plateShape ===
+      "hexagon"
+  )
+    return makePolySpec(
+      m,
+      n,
+      state.plateShape,
+    );
+  return makeSquareSpec(
+    m,
+    n,
+    state.squareSign,
+  );
+}
+
+function syncSpecs() {
+  const key = [
+    state.plateShape,
+    state.squareSign,
+    state.galleryMode
+      ? 1
+      : 0,
+    state.galleryIndex,
+    state.prevM,
+    state.prevN,
+    state.currentM,
+    state.currentN,
+  ].join(
+    "|",
+  );
+  if (
+    key ===
+      specCacheKey &&
+    state.specPacked
+  )
+    return;
+  specCacheKey = key;
+  state.prevSpec = specFor(
+    state.prevM,
+    state.prevN,
+  );
+  state.curSpec = specFor(
+    state.currentM,
+    state.currentN,
+  );
+  state.specPacked = flattenSpecs(
+    packSpec(
+      state.prevSpec,
+    ),
+    packSpec(
+      state.curSpec,
+    ),
+  );
+  state.patternDirty = true;
 }
 
 // --- 输入设备列表刷新（MIC 模式）---
@@ -1341,33 +1578,43 @@ function animate(
         dt * 2.5,
     );
 
+  // 本帧模式描述（ModeSpec）：形状 / 符号 / 画廊序号 / (m,n) 任一变化才重建
+  syncSpecs();
+
   // 粒子物理：使用混合高度场（psi≥0，sign 恒正 → 力 = -∇H 纯下坡）
   const field = {
     psiAt: (
       u,
       v,
     ) =>
-      blendedHeight(
+      blendedSpecHeight(
         u,
         v,
-        state.prevM,
-        state.prevN,
-        state.currentM,
-        state.currentN,
+        state.prevSpec,
+        state.curSpec,
         state.blendT,
       ),
     gradAt: (
       u,
       v,
     ) =>
-      blendedHeightGradient(
+      blendedSpecGrad(
         u,
         v,
-        state.prevM,
-        state.prevN,
-        state.currentM,
-        state.currentN,
+        state.prevSpec,
+        state.curSpec,
         state.blendT,
+      ),
+    // 当前底板形状与「居中坐标是否落在形状内」判定（粒子约束 / 渲染裁剪共用）
+    shape: state.plateShape,
+    inShapeAt: (
+      x,
+      y,
+    ) =>
+      inShapeXY(
+        x,
+        y,
+        state.plateShape,
       ),
     vibration:
       state.vibrationAmplitude,
@@ -1472,6 +1719,9 @@ function animate(
         prevN: state.prevN,
         curM: state.currentM,
         curN: state.currentN,
+        shape: state.plateShape,
+        // 打包后的 prev/cur 模式描述（贝塞尔圆板 / 方板退化叠加 / 多边形光栅）
+        spec: state.specPacked,
         blendT: state.blendT,
         plateLimit: 0.97,
         collision: state.collision
@@ -1541,6 +1791,11 @@ function animate(
             state.plateX,
           plateY:
             state.plateY,
+          shape:
+            state.plateShape,
+          // 结构化克隆 62 个 float，开销可忽略；Worker 侧直接在打包数组上求值
+          spec:
+            state.specPacked,
         },
       );
     }
@@ -1770,6 +2025,14 @@ function init() {
   ) {
     state.audioSource =
       saved.audioSource;
+    state.plateShape =
+      saved.plateShape;
+    state.squareSign =
+      saved.squareSign;
+    state.galleryMode =
+      saved.galleryMode;
+    state.galleryIndex =
+      saved.galleryIndex;
     state.simFreq =
       saved.simFreq;
     state.showParticles =
@@ -1838,12 +2101,28 @@ function init() {
     state.currentN;
   state.blendT = 1;
   state.patternDirty = true;
+  // 首帧前先把模式描述准备好，避免 buildField 拿到 null
+  syncSpecs();
+  // 恢复的形状同步给三条粒子路径（默认 square 时也无副作用）
+  if (
+    state.plateShape !==
+    "square"
+  )
+    onSelectShape(
+      state.plateShape,
+    );
 
   // UI 绑定
   ui = setupUI(
     {
       onSelectSource,
       onShareSystem,
+      onSelectShape,
+      onToggleSquareSign,
+      onToggleGallery,
+      onGalleryIndex,
+      galleryCount,
+      galleryLabel,
       onSelectInputDevice,
       onSelectOutputDevice,
       onTogglePattern: () => {

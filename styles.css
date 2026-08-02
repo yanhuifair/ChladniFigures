@@ -305,6 +305,37 @@ canvas {
   cursor: pointer;
 }
 
+/* --- 底板形状选择（PATTERN PARAMETERS 段） --- */
+.shape-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-sm);
+}
+.shape-btn {
+  height: 24px;
+  line-height: 24px;
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-dim);
+  font-size: var(--fs-ui);
+  font-family: var(--font-mono);
+  letter-spacing: 0.6px;
+  cursor: pointer;
+  text-align: center;
+}
+.shape-btn:hover {
+  background: #1a1a1a;
+  color: #aaa;
+}
+.shape-btn.active {
+  background: var(--c-active);
+  color: #000;
+  font-weight: 700;
+}
+.gallery-control.hidden {
+  display: none;
+}
+
 /* --- 底板物理参数（PLATE PHYSICS） --- */
 .plate-physics {
   margin-top: var(--sp-lg);

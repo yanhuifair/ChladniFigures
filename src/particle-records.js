@@ -1,5 +1,5 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  ParticleRecords — 沙粒渲染记录批处理
@@ -23,7 +23,7 @@
 //  纯计算、无 DOM 依赖 → 主线程与 Web Worker 共用。
 // ============================================================
 
-import { blendedHeight } from "./chladni.js";
+import { packedHeight } from "./chladni.js";
 import { fieldGridReady, sampleHeight } from "./field-grid.js";
 
 export const REC_STRIDE = 5;
@@ -42,7 +42,8 @@ export function recPixelY(ny, plateSize) {
 
 // 生成本帧渲染记录。
 // particles: ParticleSystem.particles 数组
-// params: { plateSize, grainPx, prevM, prevN, curM, curN, blendT }
+// params: { plateSize, grainPx, spec, blendT }
+//   spec 为打包 ModeSpec（62 个 float），仅在波场网格未就绪时用于精确回退
 // 返回 { data: Float32Array, count }，data 为复用缓冲，仅前 count*5 个元素有效。
 export function buildParticleRecords(particles, params) {
   const plateSize = params.plateSize;
@@ -58,12 +59,11 @@ export function buildParticleRecords(particles, params) {
   }
   const d = _buf;
 
-  // 网格未就绪（例如首帧或 GPU 路径下 CPU 物理未跑）时退回精确解析式
+  // 网格未就绪（例如首帧或 GPU 路径下 CPU 物理未跑）时退回精确解析式；
+  // spec 缺失（极早期首帧）则视作全平场，仅影响首帧亮度
+  const spec = params.spec;
   const useGrid = fieldGridReady();
-  const prevM = params.prevM;
-  const prevN = params.prevN;
-  const curM = params.curM;
-  const curN = params.curN;
+  const useSpec = !useGrid && !!spec;
   const blendT = params.blendT;
 
   let count = 0;
@@ -95,7 +95,9 @@ export function buildParticleRecords(particles, params) {
     const v = (p.y + 1) * 0.5;
     const h = useGrid
       ? sampleHeight(u, v)
-      : blendedHeight(u, v, prevM, prevN, curM, curN, blendT);
+      : useSpec
+        ? packedHeight(spec, u, v, blendT)
+        : 0;
     const nodeAffinity = Math.exp(-(h * h) * 110);
 
     // 堆叠密度归一化：density 为碰撞阶段统计的近邻数（0=孤立），

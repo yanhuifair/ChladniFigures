@@ -1,9 +1,14 @@
-// MIT License — Copyright (c) 2026 Fair
-// SPDX-License-Identifier: MIT
+// GNU Affero General Public License v3.0 — Copyright (c) 2026 Fair
+// SPDX-License-Identifier: AGPL-3.0
 
 // ============================================================
 //  Chladni 方程与模式映射（纯数学，无 DOM 依赖）
 // ============================================================
+
+import {
+  besselJ,
+  circleZero,
+} from "./bessel.js";
 
 // 数值夹取
 export function clamp(
@@ -54,20 +59,209 @@ export function centerExcitation(
   );
 }
 
-// --- 克拉尼方程（标准教科书形式，不做任何人为修饰） ---
-// 同模 (m=n)：乘积形式 ψ = cos(mπu)·cos(nπv)
-//   → m×m 网格节线（差形式在 m=n 时恒为 0，故用乘积；等价于和形式 ÷2）
-// 异模 (m≠n)：经典差形式 ψ = cos(nπu)cos(mπv) − cos(mπu)cos(nπv)
-//   这是方形自由板简并模对 (m,n)/(n,m) 的反对称组合，即文献与实物
-//   克拉尼板上最常观察到的图形。注意：ψ(x,y) = −ψ(y,x) ⇒ 主对角线
-//   x=y 恒为节线——这是真实物理（沙粒确实会聚在对角线上），不是伪影，
-//   不做删除或减弱。
-// 自由板模式形状（即最终位移场，无中心夹持）
-function rawPsi(
+// --- 位移场的唯一来源：ModeSpec 统一模型 ---
+// 早期的 chladniPsi / blendedHeight / blendedHeightShape 等旧接口已删除：
+// 位移场现在只有一条实现路径 —— squarePsi / circlePsi / polyPsi 由 specPsi
+// 组装，再打包成定长数组供 JS / GLSL / WGSL 三端逐行同构地求值。
+
+// --- 底板形状（克拉尼板外形）---
+// 支持：正方形 / 圆形 / 等边三角形 / 正六边形。
+// 坐标约定：所有形状都内接于以 (cx,cy)∈[-1,1] 为中心的同一正方形区域，
+// 与粒子坐标 (x,y)∈[-1,1]、以及 u=(x+1)/2∈[0,1] 完全对应。
+// 注：圆/三角/六边为「对称近似」的克拉尼模态（非严格本征函数），
+// 用于艺术可视化——能产出具备该形状 Dn 对称性的节线图案即可。
+export const PLATE_SHAPES = [
+  "square",
+  "circle",
+  "triangle",
+  "hexagon",
+];
+
+export function shapeIndex(
+  shape,
+) {
+  const i =
+    PLATE_SHAPES.indexOf(
+      shape,
+    );
+  return i < 0
+    ? 0
+    : i;
+}
+
+// 三角/六边的对称方向（120° / 60° 均布），用于叠加余弦光栅
+const TRI_DIRS = [
+  [
+    1,
+    0,
+  ],
+  [
+    -0.5,
+    0.8660254,
+  ],
+  [
+    -0.5,
+    -0.8660254,
+  ],
+];
+const HEX_DIRS = [];
+for (
+  let j = 0;
+  j < 6;
+  j++
+) {
+  const a =
+    j *
+    Math.PI /
+    3;
+  HEX_DIRS.push(
+    [
+      Math.cos(
+        a,
+      ),
+      Math.sin(
+        a,
+      ),
+    ],
+  );
+}
+
+// 三角形内/外判定（顶点 A(0,1) B(-√3/2,-1/2) C(√3/2,-1/2)，叉积同侧法）
+function _triSign(
+  px,
+  py,
+  ax,
+  ay,
+  bx,
+  by,
+) {
+  return (
+    px -
+      bx
+  ) * (
+    ay -
+      by
+  ) - (
+    ax -
+      bx
+  ) * (
+    py -
+      by
+  );
+}
+function inTriangle(
+  x,
+  y,
+) {
+  const d1 = _triSign(
+    x,
+    y,
+    0,
+    1,
+    -0.8660254,
+    -0.5,
+  );
+  const d2 = _triSign(
+    x,
+    y,
+    -0.8660254,
+    -0.5,
+    0.8660254,
+    -0.5,
+  );
+  const d3 = _triSign(
+    x,
+    y,
+    0.8660254,
+    -0.5,
+    0,
+    1,
+  );
+  const hasNeg =
+    d1 < 0 ||
+    d2 < 0 ||
+    d3 < 0;
+  const hasPos =
+    d1 > 0 ||
+    d2 > 0 ||
+    d3 > 0;
+  return !(
+    hasNeg &&
+    hasPos
+  );
+}
+// 正六边形（顶点在 0/60/.../300°，外接半径 1）内/外判定
+function inHexagon(
+  x,
+  y,
+) {
+  const c = 0.8660254; // √3/2
+  return (
+    Math.abs(
+      y,
+    ) <= c &&
+    Math.abs(
+      c * x +
+        0.5 *
+          y,
+    ) <= c &&
+    Math.abs(
+      c * x -
+        0.5 *
+          y,
+    ) <= c
+  );
+}
+
+// 居中坐标 (cx,cy)∈[-1,1] 是否落在形状内部（粒子与底板渲染共用）
+export function inShapeXY(
+  cx,
+  cy,
+  shape,
+) {
+  switch (
+    shape
+  ) {
+    case "circle":
+      return (
+        cx *
+          cx +
+        cy *
+          cy <=
+        1
+      );
+    case "triangle":
+      return inTriangle(
+        cx,
+        cy,
+      );
+    case "hexagon":
+      return inHexagon(
+        cx,
+        cy,
+      );
+    default:
+      return (
+        Math.abs(
+          cx,
+        ) <= 1 &&
+        Math.abs(
+          cy,
+        ) <= 1
+      );
+  }
+}
+
+// 正方形位移场（带符号变体）。
+// sign < 0：经典差形式（反对称组合，对角为节线）
+// sign ≥ 0：和形式（cos 项相加 → 另一类真实物理图样）
+// m == n：乘积形式（两者等价）
+export function squarePsi(
   u,
   v,
   m,
   n,
+  sign,
 ) {
   if (
     Math.abs(
@@ -89,8 +283,33 @@ function rawPsi(
       )
     );
   }
-  // 异模 (m≠n)：标准差形式（k = −1，无人为系数）
-  //   ψ = cos(nπu)cos(mπv) − cos(mπu)cos(nπv)
+  if (
+    sign >=
+    0
+  ) {
+    return (
+      Math.cos(
+        n *
+          Math.PI *
+          u,
+      ) *
+        Math.cos(
+          m *
+            Math.PI *
+            v,
+        ) +
+      Math.cos(
+        m *
+          Math.PI *
+          u,
+      ) *
+        Math.cos(
+          n *
+            Math.PI *
+            v,
+        )
+    );
+  }
   return (
     Math.cos(
       n *
@@ -102,282 +321,818 @@ function rawPsi(
           Math.PI *
           v,
       ) -
+    Math.cos(
+      m *
+        Math.PI *
+        u,
+    ) *
       Math.cos(
-        m *
+        n *
           Math.PI *
-          u,
-      ) *
-        Math.cos(
-          n *
-            Math.PI *
-            v,
-        )
+          v,
+      )
   );
 }
 
-// 位移场：直接使用自由板方程（不再乘中心夹持窗）
-export function chladniPsi(
-  u,
-  v,
-  m,
-  n,
+// 圆形位移场（精确自由板本征函数）：ψ = J_n(z·r)·cos(nθ)
+// nAng = 角向阶（辐射节线数），nRad = 径向序号（同心节圆数）
+export function circlePsi(
+  cx,
+  cy,
+  nRad,
+  nAng,
 ) {
-  return rawPsi(
-    u,
-    v,
-    m,
-    n,
+  const r =
+    Math.sqrt(
+      cx *
+        cx +
+      cy *
+        cy,
+    );
+  const th = Math.atan2(
+    cy,
+    cx,
+  );
+  const z = circleZero(
+    nAng,
+    nRad,
+  );
+  const ang =
+    nAng ===
+    0
+      ? 1
+      : Math.cos(
+        nAng * th,
+      );
+  return (
+    besselJ(
+      nAng,
+      z * r,
+    ) * ang
   );
 }
 
-// 自由板模式形状梯度（即最终位移场梯度，无中心夹持）
-function rawGradient(
-  u,
-  v,
+// 三角/六边共用：D_n 对称余弦光栅之差（艺术近似）
+function polyPsi(
+  cx,
+  cy,
   m,
   n,
+  shape,
 ) {
-  if (
-    Math.abs(
-      m -
-        n,
-    ) <
-    0.5
+  let s = 0;
+  const dirs =
+    shape ===
+    "triangle"
+      ? TRI_DIRS
+      : HEX_DIRS;
+  for (
+    const d of dirs
   ) {
-    // 乘积形式梯度：∂(a·b)/∂u = a'·b，∂(a·b)/∂v = a·b'
-    const au =
+    const p =
+      cx *
+        d[0] +
+      cy *
+        d[1];
+    s +=
       Math.cos(
-        m *
-          Math.PI *
-          u,
-      );
-    const bv =
+        m * p,
+      ) -
       Math.cos(
-        n *
-          Math.PI *
-          v,
+        n * p,
       );
-    const auPrime =
-      -m *
-      Math.PI *
-      Math.sin(
-        m *
-          Math.PI *
-          u,
-      );
-    const bvPrime =
-      -n *
-      Math.PI *
-      Math.sin(
-        n *
-          Math.PI *
-          v,
-      );
-    return {
-      dx:
-        auPrime *
-        bv,
-      dy:
-        au *
-        bvPrime,
-    };
   }
-  // 标准差形式梯度：ψ = cos(nπu)cos(mπv) − cos(mπu)cos(nπv)
-  //   ∂/∂u = −nπ·sin(nπu)cos(mπv) + mπ·sin(mπu)cos(nπv)
-  //   ∂/∂v = −mπ·cos(nπu)sin(mπv) + nπ·cos(mπu)sin(nπv)
+  return s;
+}
+
+
+// ============================================================
+//  ModeSpec — 统一模式描述（正方形符号/退化叠加 · 圆形贝塞尔 · 多边形光栅）
+//  渲染与物理三路径（JS / GLSL / WGSL）共用同一份打包数据，避免数学三处重复。
+//    square: { shape:"square", terms:[{m,n,sign}] }  sign ∈ {+1,−1}
+//    circle: { shape:"circle", nAng, nRad }           nAng 角向 / nRad 径向序号
+//    triangle/hexagon: { shape, m, n }
+// ============================================================
+
+// 正方形单模式（sign 默认 −1：经典差形式）
+export function makeSquareSpec(
+  m,
+  n,
+  sign = -1,
+) {
   return {
-    dx:
-      Math.PI *
-      (-n *
-        Math.sin(
-          n *
-            Math.PI *
-            u,
-        ) *
-        Math.cos(
-          m *
-            Math.PI *
-            v,
-        ) +
-        m *
-          Math.sin(
-            m *
-              Math.PI *
-              u,
-          ) *
-          Math.cos(
-            n *
-              Math.PI *
-              v,
-          )),
-    dy:
-      Math.PI *
-      (-m *
-        Math.cos(
-          n *
-            Math.PI *
-            u,
-        ) *
-        Math.sin(
-          m *
-            Math.PI *
-            v,
-        ) +
-        n *
-          Math.cos(
-            m *
-              Math.PI *
-              u,
-          ) *
-          Math.sin(
-            n *
-              Math.PI *
-              v,
-          )),
+    shape: "square",
+    terms: [
+      {
+        m,
+        n,
+        sign:
+          sign >= 0
+            ? 1
+            : -1,
+      },
+    ],
   };
 }
 
-// 位移场解析梯度：直接取自由板方程梯度（与 chladniPsi 严格一致）
-export function chladniGradient(
-  u,
-  v,
+export function makeCircleSpec(
+  nAng,
+  nRad,
+) {
+  return {
+    shape: "circle",
+    nAng: clamp(
+      nAng,
+      0,
+      12,
+    ),
+    nRad: clamp(
+      nRad,
+      1,
+      12,
+    ),
+  };
+}
+
+export function makePolySpec(
   m,
   n,
+  shape,
 ) {
-  return rawGradient(
-    u,
-    v,
+  return {
+    shape,
     m,
     n,
+  };
+}
+
+// 位移场归一化尺度：让不同形状 / 不同叠加项数的 |ψ| 峰值都落在 ≈2
+// （沿用方板单模式的历史量纲），这样节线粗细公式 exp(−h²·k) 与
+// 粒子受力强度在四种底板之间保持一致，不会出现「圆板线极粗、
+// 画廊叠加线极细」的失衡。
+export function specScale(
+  spec,
+) {
+  if (
+    spec.shape ===
+    "square"
+  ) {
+    // 方板峰值可解析给出（板角 u=v=0 处所有 cos 取 1）：
+    //   m≠n 项峰值 2（和/差形式），m=n 项峰值 1（乘积形式）
+    // 退化叠加时各项在角上同号相加 → 总峰值即各项峰值之和。
+    let denom = 0;
+    for (
+      const term of spec.terms
+    )
+      denom +=
+        Math.abs(
+          term.m -
+            term.n,
+        ) < 0.5
+          ? 1
+          : 2;
+    return (
+      2 /
+      Math.max(
+        1e-6,
+        denom,
+      )
+    );
+  }
+  if (
+    spec.shape ===
+    "circle"
+  ) {
+    // 采样 J_n(z·r)（r∈[0,1]）取峰值，缩放到峰值 2
+    const z = circleZero(
+      spec.nAng,
+      spec.nRad,
+    );
+    let peak = 1e-6;
+    for (
+      let i = 0;
+      i <= 64;
+      i++
+    ) {
+      const a = Math.abs(
+        besselJ(
+          spec.nAng,
+          (z * i) /
+            64,
+        ),
+      );
+      if (
+        a >
+        peak
+      )
+        peak = a;
+    }
+    return (
+      2 / peak
+    );
+  }
+  // 多边形光栅：各方向相干叠加，理论上界远达不到 → 在形状内采样求实际峰值
+  let pk = 1e-6;
+  for (
+    let i = 0;
+    i <= 48;
+    i++
+  ) {
+    for (
+      let j = 0;
+      j <= 48;
+      j++
+    ) {
+      const cx =
+        (i / 48) *
+          2 -
+        1;
+      const cy =
+        (j / 48) *
+          2 -
+        1;
+      if (
+        !inShapeXY(
+          cx,
+          cy,
+          spec.shape,
+        )
+      )
+        continue;
+      const a = Math.abs(
+        polyPsi(
+          cx,
+          cy,
+          spec.m,
+          spec.n,
+          spec.shape,
+        ),
+      );
+      if (
+        a >
+        pk
+      )
+        pk = a;
+    }
+  }
+  return (
+    2 / pk
   );
 }
 
-// --- 混合高度场（保持中心对称的模式过渡） ---
-// 关键：克拉尼方程只有在 m、n 为整数时才关于板中心对称
-//（cos(mπ(1−u)) = ±cos(mπu) 仅当 m∈ℤ）。因此模式切换不能用
-// 小数 (m,n) 连续插值，而是对"两个整数模式的 |ψ| 高度场"做
-// 交叉淡入——每个整数模式都中心对称，线性混合后依然中心对称。
+// 取（并缓存）某个 spec 的归一化尺度
+function scaleOf(
+  spec,
+) {
+  if (
+    spec._scale ===
+    undefined
+  )
+    spec._scale = specScale(
+      spec,
+    );
+  return spec._scale;
+}
 
-// 混合海拔：H = (1−t)·|ψ(pm,pn)| + t·|ψ(cm,cn)|
-export function blendedHeight(
+// 模式位移场 ψ(u,v)（u,v∈[0,1]），带符号，已归一化
+export function specPsi(
+  spec,
   u,
   v,
-  pm,
-  pn,
-  cm,
-  cn,
+) {
+  const k = scaleOf(
+    spec,
+  );
+  if (
+    spec.shape ===
+    "square"
+  ) {
+    let s = 0;
+    for (
+      const term of spec.terms
+    ) {
+      s +=
+        term.sign *
+        squarePsi(
+          u,
+          v,
+          term.m,
+          term.n,
+          term.sign,
+        );
+    }
+    return s * k;
+  }
+  const cx =
+    2 * u -
+    1;
+  const cy =
+    2 * v -
+    1;
+  if (
+    spec.shape ===
+    "circle"
+  )
+    return (
+      circlePsi(
+        cx,
+        cy,
+        spec.nRad,
+        spec.nAng,
+      ) * k
+    );
+  return (
+    polyPsi(
+      cx,
+      cy,
+      spec.m,
+      spec.n,
+      spec.shape,
+    ) * k
+  );
+}
+
+// 模式位移场梯度（数值差分，对所有形状通用）
+function specGrad(
+  spec,
+  u,
+  v,
+) {
+  const e = 1e-3;
+  const hx =
+    specPsi(
+      spec,
+      u + e,
+      v,
+    ) -
+    specPsi(
+      spec,
+      u - e,
+      v,
+    );
+  const hy =
+    specPsi(
+      spec,
+      u,
+      v + e,
+    ) -
+    specPsi(
+      spec,
+      u,
+      v - e,
+    );
+  return {
+    dx:
+      hx /
+      (2 * e),
+    dy:
+      hy /
+      (2 * e),
+  };
+}
+
+// 混合高度场 H = (1−t)·|ψ(prev)| + t·|ψ(cur)|
+export function blendedSpecHeight(
+  u,
+  v,
+  prevSpec,
+  curSpec,
   t,
 ) {
   const hc = Math.abs(
-    chladniPsi(
+    specPsi(
+      curSpec,
       u,
       v,
-      cm,
-      cn,
     ),
   );
   if (
     t >=
     1
-  ) {
+  )
     return hc;
-  }
   const hp = Math.abs(
-    chladniPsi(
+    specPsi(
+      prevSpec,
       u,
       v,
-      pm,
-      pn,
     ),
   );
   return (
     hp *
-      (1 -
-        t) +
-    hc *
-      t
+      (1 - t) +
+    hc * t
   );
 }
 
-// 混合海拔的梯度：∇H = (1−t)·sign(ψp)·∇ψp + t·sign(ψc)·∇ψc
-//（∇|ψ| = sign(ψ)·∇ψ 几乎处处成立）
-export function blendedHeightGradient(
+// 混合高度场梯度（∇|ψ| = sign(ψ)·∇ψ）
+export function blendedSpecGrad(
   u,
   v,
-  pm,
-  pn,
-  cm,
-  cn,
+  prevSpec,
+  curSpec,
   t,
 ) {
-  const psiC =
-    chladniPsi(
-      u,
-      v,
-      cm,
-      cn,
-    );
-  const gC =
-    chladniGradient(
-      u,
-      v,
-      cm,
-      cn,
-    );
-  const sC =
-    psiC >=
+  const psic = specPsi(
+    curSpec,
+    u,
+    v,
+  );
+  const gc = specGrad(
+    curSpec,
+    u,
+    v,
+  );
+  const sc =
+    psic >=
     0
       ? 1
       : -1;
   if (
     t >=
     1
-  ) {
+  )
     return {
       dx:
-        sC *
-        gC.dx,
+        sc *
+        gc.dx,
       dy:
-        sC *
-        gC.dy,
+        sc *
+        gc.dy,
     };
-  }
-  const psiP =
-    chladniPsi(
-      u,
-      v,
-      pm,
-      pn,
-    );
-  const gP =
-    chladniGradient(
-      u,
-      v,
-      pm,
-      pn,
-    );
-  const sP =
-    psiP >=
+  const psip = specPsi(
+    prevSpec,
+    u,
+    v,
+  );
+  const gp = specGrad(
+    prevSpec,
+    u,
+    v,
+  );
+  const sp =
+    psip >=
     0
       ? 1
       : -1;
   return {
     dx:
-      sP *
-        gP.dx *
-        (1 -
-          t) +
-      sC *
-        gC.dx *
+      sp *
+        gp.dx *
+        (1 - t) +
+      sc *
+        gc.dx *
         t,
     dy:
-      sP *
-        gP.dy *
-        (1 -
-          t) +
-      sC *
-        gC.dy *
+      sp *
+        gp.dy *
+        (1 - t) +
+      sc *
+        gc.dy *
         t,
+  };
+}
+
+// --- 打包（供 GLSL/WGSL 着色器消费） ---
+export const SQ_MAX = 8; // 正方形退化叠加最多 8 项（k≤800 下表示数足够）
+
+export function packSpec(
+  spec,
+) {
+  const p = {
+    shapeIdx: shapeIndex(
+      spec.shape,
+    ),
+    scale: scaleOf(
+      spec,
+    ),
+    sqLen: 0,
+    sqM: new Array(
+      SQ_MAX,
+    ).fill(
+      0,
+    ),
+    sqN: new Array(
+      SQ_MAX,
+    ).fill(
+      0,
+    ),
+    sqS: new Array(
+      SQ_MAX,
+    ).fill(
+      -1,
+    ),
+    cirN: 0,
+    cirZ: 0,
+    polyM: 0,
+    polyN: 0,
+  };
+  if (
+    spec.shape ===
+    "square"
+  ) {
+    const terms = spec.terms.slice(
+      0,
+      SQ_MAX,
+    );
+    p.sqLen = terms.length;
+    terms.forEach(
+      (
+        term,
+        i,
+      ) => {
+        p.sqM[i] = term.m;
+        p.sqN[i] = term.n;
+        p.sqS[i] = term.sign;
+      },
+    );
+  } else if (
+    spec.shape ===
+    "circle"
+  ) {
+    p.cirN = spec.nAng;
+    p.cirZ = circleZero(
+      spec.nAng,
+      spec.nRad,
+    );
+  } else {
+    p.polyM = spec.m;
+    p.polyN = spec.n;
+  }
+  return p;
+}
+
+// 将 prev+cur 打包成定长 Float32Array（供 GLSL uniform / WGSL storage buffer）
+// 每个 spec 占 31 个 float，布局：
+//   [0] shapeIdx  [1] sqLen  [2] scale
+//   [3..10] sqM   [11..18] sqN   [19..26] sqS
+//   [27] cirN  [28] cirZ  [29] polyM  [30] polyN
+// prev 在 [0..30]，cur 在 [31..61]，总长 SPEC_FLOATS = 62。
+export const SPEC_STRIDE = 31;
+export const SPEC_FLOATS = 62;
+
+export function flattenSpecs(
+  prevP,
+  curP,
+) {
+  const a = new Float32Array(
+    SPEC_FLOATS,
+  );
+  let o = 0;
+  a[o++] = prevP.shapeIdx;
+  a[o++] = prevP.sqLen;
+  a[o++] = prevP.scale;
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = prevP.sqM[i];
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = prevP.sqN[i];
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = prevP.sqS[i];
+  a[o++] = prevP.cirN;
+  a[o++] = prevP.cirZ;
+  a[o++] = prevP.polyM;
+  a[o++] = prevP.polyN;
+  a[o++] = curP.shapeIdx;
+  a[o++] = curP.sqLen;
+  a[o++] = curP.scale;
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = curP.sqM[i];
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = curP.sqN[i];
+  for (
+    let i = 0;
+    i < SQ_MAX;
+    i++
+  )
+    a[o++] = curP.sqS[i];
+  a[o++] = curP.cirN;
+  a[o++] = curP.cirZ;
+  a[o++] = curP.polyM;
+  a[o++] = curP.polyN;
+  return a;
+}
+
+// --- 打包数组求值（CPU 侧，与 GLSL / WGSL 逐行同构）---
+// Worker 通过结构化克隆只能拿到 Float32Array（ModeSpec 里的
+// terms 数组与缓存尺度不便传递），因此 CPU 物理与 CPU 渲染回退
+// 统一直接在打包数组上求值：三条路径（JS / GLSL / WGSL）共用同一
+// 份布局与同一套公式，圆板贝塞尔、方板符号/退化叠加、多边形光栅
+// 在任何渲染后端下都得到完全一致的图形。
+// base = 0 取 prev，base = SPEC_STRIDE 取 cur。
+export function packedPsi(
+  a,
+  base,
+  u,
+  v,
+) {
+  const shape = a[base];
+  const scale = a[base + 2];
+  if (shape < 0.5) {
+    const len = Math.min(SQ_MAX, (a[base + 1] + 0.5) | 0);
+    let s = 0;
+    for (let i = 0; i < len; i++) {
+      const sgn = a[base + 19 + i];
+      s += sgn * squarePsi(u, v, a[base + 3 + i], a[base + 11 + i], sgn);
+    }
+    return s * scale;
+  }
+  const cx = 2 * u - 1;
+  const cy = 2 * v - 1;
+  if (shape < 1.5) {
+    // 圆板精确本征函数：J_n(z_{n,m}·r)·cos(nθ)
+    const nAng = Math.round(a[base + 27]);
+    const z = a[base + 28];
+    const r = Math.sqrt(cx * cx + cy * cy);
+    const ang = nAng === 0 ? 1 : Math.cos(nAng * Math.atan2(cy, cx));
+    return besselJ(nAng, z * r) * ang * scale;
+  }
+  return (
+    polyPsi(
+      cx,
+      cy,
+      a[base + 29],
+      a[base + 30],
+      shape < 2.5 ? "triangle" : "hexagon",
+    ) * scale
+  );
+}
+
+// 混合高度场 H = (1−t)·|ψ(prev)| + t·|ψ(cur)|（打包版）
+export function packedHeight(
+  a,
+  u,
+  v,
+  t,
+) {
+  const hc = Math.abs(packedPsi(a, SPEC_STRIDE, u, v));
+  if (t >= 1) return hc;
+  const hp = Math.abs(packedPsi(a, 0, u, v));
+  return hp * (1 - t) + hc * t;
+}
+
+// 混合高度场梯度（中心差分，与 WGSL specGrad 完全一致）。
+// 返回复用对象，调用方须立即取值，勿长期持有。
+const _packedGrad = {
+  dx: 0,
+  dy: 0,
+};
+export function packedGrad(
+  a,
+  u,
+  v,
+  t,
+) {
+  const e = 1e-3;
+  _packedGrad.dx =
+    (packedHeight(a, u + e, v, t) - packedHeight(a, u - e, v, t)) / (2 * e);
+  _packedGrad.dy =
+    (packedHeight(a, u, v + e, t) - packedHeight(a, u, v - e, t)) / (2 * e);
+  return _packedGrad;
+}
+
+// 默认打包描述（方板 3×4 差形式），供各线程在收到首帧 spec 之前兜底
+export function defaultPackedSpec() {
+  const p = packSpec(
+    makeSquareSpec(
+      3,
+      4,
+      -1,
+    ),
+  );
+  return flattenSpecs(
+    p,
+    p,
+  );
+}
+
+// ============================================================
+//  图案画廊（方板退化模态目录，参考 hilbertcube/Chladni-Patterns-Generator）
+//  枚举所有唯一本征值 k = m²+n²（m,n∈[1,20], n≥m），同 k 的全部 (a,b) 对
+//  以 + 号线性叠加 → 真实克拉尼退化模态组合。按 k 升序编号，用户翻图册浏览。
+// ============================================================
+export const GALLERY = (() => {
+  const map = new Map();
+  for (
+    let m = 1;
+    m <= 20;
+    m++
+  ) {
+    for (
+      let n = m;
+      n <= 20;
+      n++
+    ) {
+      const k =
+        m *
+          m +
+        n *
+        n;
+      if (
+        !map.has(
+          k,
+        )
+      )
+        map.set(
+          k,
+          [],
+        );
+      map.get(
+        k,
+      ).push(
+        {
+          m,
+          n,
+        },
+      );
+    }
+  }
+  const ks = [
+    ...map.keys(),
+  ].sort(
+    (
+      a,
+      b,
+    ) => a - b,
+  );
+  return ks.map(
+    (
+      k,
+    ) => ({
+      k,
+      pairs: map.get(
+        k,
+      ),
+    }),
+  );
+})();
+
+export function galleryCount() {
+  return GALLERY.length;
+}
+
+export function gallerySpec(
+  i,
+) {
+  const entry = GALLERY[
+    Math.max(
+      0,
+      Math.min(
+        GALLERY.length - 1,
+        i | 0,
+      ),
+    )
+  ];
+  const terms = entry.pairs.map(
+    (
+      p,
+    ) => ({
+      m: p.m,
+      n: p.n,
+      sign: 1,
+    }),
+  );
+  return {
+    shape: "square",
+    terms,
+  };
+}
+
+export function galleryLabel(
+  i,
+) {
+  const entry = GALLERY[
+    Math.max(
+      0,
+      Math.min(
+        GALLERY.length - 1,
+        i | 0,
+      ),
+    )
+  ];
+  return {
+    k: entry.k,
+    pairs: entry.pairs,
+    count: entry.pairs.length,
   };
 }
 
