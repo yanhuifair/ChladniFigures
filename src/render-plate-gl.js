@@ -166,9 +166,9 @@ float shapeDist(float u, float v, float shape) {
 }
 
 // 形状遮罩：在 d 上做内缩 + smoothstep 柔边（圆/三角/六边干净不锯齿）。
-// 板缘对齐沙粒堆积边界：内缩 0.008（紧贴真实边界，仅避开最外缘场畸变），
-// 柔边至少覆盖 1.5 像素。RIM_INSET = 0.02（particles.js / webgpu-particles.js），
-// 故可见板缘 ≈ 0.008+0.012 = 0.02，与沙粒堆积边界对齐 → 沙粒堆在可见板缘内侧。
+// 内缩 0.008（紧贴真实边界，仅避开最外缘场畸变），柔边至少覆盖 1.5 像素。
+// WALL_INSET = 0.02（particles.js / webgpu-particles.js）：越界沙粒像撞墙一样弹回时
+// 沿内法线偏移 0.02，与可见板缘（≈0.008+0.012）对齐 → 沙粒始终留在绘制出的底板内。
 float shapeMask(float d, float px) {
   float aa = max(0.012, px * 1.5);
   return clamp((d - 0.008) / aa, 0.0, 1.0);

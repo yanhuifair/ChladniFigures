@@ -304,7 +304,6 @@ struct U {
   zGrain: f32,
   repose: f32,
   shape: f32, // 底板形状索引：0 正方形 / 1 圆形 / 2 等边三角形 / 3 正六边形
-  edgeAccumulate: f32, // 贴边堆积开关：>0.5 时沙粒吸向边界并沿轮廓堆积
 };
 
 @group(0) @binding(0) var<uniform> u: U;
@@ -340,20 +339,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.vz = 0.0;
     p.z = 0.0;
     }
-    // 越界：有形状约束则投影回边界定居（贴边堆积），否则退回方形盒内重生
+    // 越界：有形状约束则像撞墙一样弹回边界内（不吸附、不堆积），否则退回方形盒内重生
     if (!inShapeXY(p.pos.x, p.pos.y, u.shape)) {
       let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
       let ox = p.pos.x - bp.x;
       let oy = p.pos.y - bp.y;
       let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
-      p.pos = vec2<f32>(bp.x + ox / ol * 0.02, bp.y + oy / ol * 0.02);
-      p.air = 0.0;
-      p.vel = vec2<f32>(0.0, 0.0);
-      p.vz = 0.0;
-      p.z = 0.0;
-      p.settled = 1.0;
-      outState[i] = p;
-      return;
+      let ux = ox / ol;
+      let uy = oy / ol;
+      // 位置沿内法线拉回边界内（与可见板缘对齐）
+      p.pos = vec2<f32>(bp.x - ux * 0.02, bp.y - uy * 0.02);
+      // 速度反射：去掉向外的分量，朝内弹回（撞墙）
+      let vOut = p.vel.x * ux + p.vel.y * uy;
+      if (vOut > 0.0) {
+        p.vel = p.vel - vec2<f32>(ux, uy) * (2.0 * vOut);
+      }
     } else if (p.pos.x < -u.plateLimit || p.pos.x > u.plateLimit || p.pos.y < -u.plateLimit || p.pos.y > u.plateLimit) {
       p.pos = spawnInShape(&seed, u.shape);
       p.air = 0.0;
@@ -424,31 +424,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     p.settled = max(p.settled - dt * 1.5, 0.0);
   }
 
-  // 贴边堆积：板内靠近边界的沙粒被吸向边缘并加速沉降，沿轮廓堆成沙带
-  if (u.edgeAccumulate > 0.5) {
-    let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
-    let dxb = bp.x - p.pos.x;
-    let dyb = bp.y - p.pos.y;
-    let db = sqrt(dxb * dxb + dyb * dyb);
-    if (inShapeXY(p.pos.x, p.pos.y, u.shape) && db < 0.05) {
-      p.pos = p.pos + vec2<f32>(dxb, dyb) * 0.18;
-      p.air = p.air * 0.4;
-      p.settled = min(p.settled + dt * 2.0, 1.0);
-    }
-  }
-
-  // 形状约束：被推出形状外的沙粒投影回最近边界并贴边定居（保持沙粒始终在板上）
+  // 形状约束：被推出形状外的沙粒像撞墙一样弹回边界内（不吸附、不堆积）
   if (!inShapeXY(p.pos.x, p.pos.y, u.shape)) {
     let bp = boundaryProject(p.pos.x, p.pos.y, u.shape);
     let ox = p.pos.x - bp.x;
     let oy = p.pos.y - bp.y;
     let ol = max(sqrt(ox * ox + oy * oy), 1e-4);
-    p.pos = vec2<f32>(bp.x + ox / ol * 0.02, bp.y + oy / ol * 0.02);
-    p.air = 0.0;
-    p.vel = vec2<f32>(0.0, 0.0);
-    p.vz = 0.0;
-    p.z = 0.0;
-    p.settled = 1.0;
+    let ux = ox / ol;
+    let uy = oy / ol;
+    p.pos = vec2<f32>(bp.x - ux * 0.02, bp.y - uy * 0.02);
+    let vOut = p.vel.x * ux + p.vel.y * uy;
+    if (vOut > 0.0) {
+      p.vel = p.vel - vec2<f32>(ux, uy) * (2.0 * vOut);
+    }
   }
 
   outState[i] = p;
@@ -1299,9 +1287,6 @@ export class WebGPUParticleSystem {
       ? params.repose
       : Z_REPOSE;
     uF[16] = this._shapeIdx; // 底板形状索引
-    uF[17] = params.edgeAccumulate != null
-      ? params.edgeAccumulate
-      : 1; // 贴边堆积（默认开）
     dev.queue.writeBuffer(
       this.uUniform,
       0,

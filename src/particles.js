@@ -34,10 +34,9 @@ import {
   boundaryProject,
 } from "./chladni.js";
 
-// 贴边堆积：到边界距离小于此值（归一化，板半宽=1）的沙粒被吸向边缘并加速沉降
-const EDGE_BAND = 0.05;
-// 贴边定居时朝内的微小偏移，避免沙粒压在精确边界上抖动
-const RIM_INSET = 0.02;
+// 边界墙内缩：越界沙粒弹回时沿内法线偏移此距离（归一化，板半宽=1），
+// 与可见板缘对齐，使沙粒始终留在绘制出的底板范围内（不吸附、不堆积）。
+const WALL_INSET = 0.02;
 
 
 export class ParticleSystem {
@@ -177,9 +176,9 @@ export class ParticleSystem {
     return p;
   }
 
-  // 把越界/被推出形状的沙粒投影回最近边界点并贴边定居
-  //（替代随机重生：形成沿轮廓堆积的沙带，而非凭空出现在板内）
-  _rimSettle(
+  // 边界是一道墙：越界沙粒像撞墙一样弹回板内——位置沿内法线拉回边界内，
+  // 并向外的速度分量被反射成向内，不吸附、不堆积在边缘，继续参与跳动趋向节线。
+  _wallBounce(
     p,
   ) {
     const bp = boundaryProject(
@@ -187,10 +186,10 @@ export class ParticleSystem {
       p.y,
       this.shape,
     );
-    let ox =
+    const ox =
       p.x -
       bp.x;
-    let oy =
+    const oy =
       p.y -
       bp.y;
     const ol =
@@ -199,20 +198,39 @@ export class ParticleSystem {
         oy,
       ) ||
       1;
+    const ux =
+      ox /
+      ol; // 外法线（指向粒子，粒子在界外）
+    const uy =
+      oy /
+      ol;
+    // 位置拉回边界内（沿内法线偏移 WALL_INSET，与可见板缘对齐）
     p.x =
-      bp.x +
-      (ox /
-        ol) *
-        RIM_INSET;
+      bp.x -
+      ux *
+        WALL_INSET;
     p.y =
-      bp.y +
-      (oy /
-        ol) *
-        RIM_INSET;
-    p.vx = 0;
-    p.vy = 0;
-    p.air = 0;
-    p.settled = 1;
+      bp.y -
+      uy *
+        WALL_INSET;
+    // 速度反射：去掉向外的分量，朝内弹回
+    const vOut =
+      p.vx *
+        ux +
+      p.vy *
+        uy;
+    if (
+      vOut > 0
+    ) {
+      p.vx -=
+        2 *
+        vOut *
+        ux;
+      p.vy -=
+        2 *
+        vOut *
+        uy;
+    }
     return p;
   }
 
@@ -259,9 +277,8 @@ export class ParticleSystem {
           i
         ];
 
-      // 形状约束 + 贴边堆积：
-      // 逃出底板轮廓的沙粒投影回最近边界并贴边定居（替代随机重生）；
-      // 板内且在边界带内的沙粒被吸向边缘、加速沉降，沿轮廓堆成沙带。
+      // 形状约束（边界是一道墙）：逃出底板轮廓的沙粒弹回边界内，
+      // 不吸附、不堆积在边缘（RIM 已移除）。
       if (
         field.inShapeAt
       ) {
@@ -271,46 +288,9 @@ export class ParticleSystem {
             p.y,
           )
         ) {
-          this._rimSettle(
+          this._wallBounce(
             p,
           );
-          continue;
-        }
-        if (
-          field.edgeAccumulate
-        ) {
-          const bp = boundaryProject(
-            p.x,
-            p.y,
-            this.shape,
-          );
-          if (
-            bp.inside &&
-            bp.d <
-              EDGE_BAND
-          ) {
-            p.x +=
-              (
-                bp.x -
-                p.x
-              ) *
-              0.18;
-            p.y +=
-              (
-                bp.y -
-                p.y
-              ) *
-              0.18;
-            p.air *=
-              0.4;
-            p.settled =
-              Math.min(
-                1,
-                p.settled +
-                  dtClamped *
-                  2.0,
-              );
-          }
         }
       }
 
@@ -350,7 +330,7 @@ export class ParticleSystem {
           p.vx = 0;
           p.vy = 0;
         }
-        // 越界：有形状约束则投影回边界定居（贴边堆积），否则退回方形盒内重生
+        // 越界：有形状约束则像撞墙一样弹回边界内，否则退回方形盒内重生
         if (
           field.inShapeAt
         ) {
@@ -360,7 +340,7 @@ export class ParticleSystem {
               p.y,
             )
           )
-            this._rimSettle(
+            this._wallBounce(
               p,
             );
         } else if (
