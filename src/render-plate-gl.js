@@ -194,14 +194,8 @@ void main() {
   float gain  = 0.72 + 0.38 * amp;
   float lineStrength = exp(-h * h * sharp) * gain;
 
-  // 板缘描边：紧贴可见板缘内侧画一圈细亮线，统一所有形状的边界观感。
-  // 方板铺满画布、四周无黑边对比，原本看不到边界；此描边使其也呈现清晰方框。
-  // d=0.012 处为峰值（位于板内、对齐沙粒堆积边界），半宽 0.006 → 约 1~2 像素细线。
-  float e = (d - 0.012) / 0.006;
-  float stroke = exp(-e * e) * 0.9;
-
-  // 直出白色节线 + alpha = 节线/描边强度；板外 mask=0 → 透明，露出底层黑板
-  float a = clamp(max(lineStrength, stroke), 0.0, 1.0) * mask;
+  // 直出白色节线 + alpha = 线强度；板外 mask=0 → 透明，露出底层黑板（不描边）
+  float a = clamp(lineStrength, 0.0, 1.0) * mask;
   o = vec4(1.0, 1.0, 1.0, a);
 }`;
 
