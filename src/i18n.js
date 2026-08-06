@@ -54,7 +54,7 @@ const DICT = {
     "app.versionLabel": "VERSION",
     "save.image": "SAVE IMAGE",
     "btn.fullscreen": "FULLSCREEN",
-    "btn.fullscreenHint": "Press F or click the plate to toggle fullscreen, ESC to exit",
+    "btn.fullscreenHint": "[F] Toggle fullscreen — click the plate or press F; ESC to exit",
     // 引导层
     "perm.desc":
       "Real-time audio-driven Chladni figure particle simulation.<br>Listen to music from other apps; the figure morphs live with the song.",
@@ -126,7 +126,7 @@ const DICT = {
     "hint.mode": "Current Chladni mode (m×n)",
     "hint.frequency": "Driving frequency",
     "hint.resonance": "Resonance / dominant-frequency strength",
-    "hint.save": "Save the current view as a PNG (press S)",
+    "hint.save": "[S] Save the current view as a PNG",
     "hint.listenSys": "Grant access to listen to system audio",
     "hint.mic": "Grant microphone access",
     "hint.skip": "Skip and start in manual simulation mode",
@@ -194,7 +194,7 @@ const DICT = {
     "app.versionLabel": "版本",
     "save.image": "保存图像",
     "btn.fullscreen": "全屏",
-    "btn.fullscreenHint": "按 F 或点击底板切换全屏，ESC 退出",
+    "btn.fullscreenHint": "[F] 切换全屏 — 点击底板或按 F；ESC 退出",
     "perm.desc":
       "实时音频驱动的克拉尼板粒子模拟<br>监听电脑上其他软件播放的音乐，图形随歌实时变形",
     "perm.listenSys": "监听电脑播放的音乐",
@@ -260,7 +260,7 @@ const DICT = {
     "hint.mode": "当前克拉尼模式 (m×n)",
     "hint.frequency": "驱动频率",
     "hint.resonance": "共振 / 主频强度",
-    "hint.save": "把当前画面保存为 PNG（按 S）",
+    "hint.save": "[S] 把当前画面保存为 PNG",
     "hint.listenSys": "授权监听系统音频",
     "hint.mic": "授权使用麦克风",
     "hint.skip": "跳过并进入手动模拟模式",
