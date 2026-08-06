@@ -15,7 +15,10 @@
 ```css
 :root {
   --font-mono: "Cascadia Code", "SF Mono", "Fira Code", "Consolas", "Menlo", monospace;
-  --ui-edge: 28px;
+  --ui-edge: var(--sp-lg); /* 顶/侧边距归入间距三档（原 28px 已废弃） */
+  --sp-lg: 16px; /* 区块间距 */
+  --sp-md: 8px;  /* 分组间距 */
+  --sp-sm: 4px;  /* 紧凑间距 */
   --c-bg: #000000;
   --c-surface: #0a0a0a;
   --c-border: #2a2a2a;
@@ -47,7 +50,7 @@
 
 ## 4. 布局规范
 
-- 统一留白边距：`--ui-edge`（当前为 `28px`）。
+- 统一留白边距：`--ui-edge`（= `--sp-lg`，16px；全站间距只用 16/8/4 三档）。
 - 左上：系统标题。
 - 左下：主控制面板（音源、模式、开关）。
 - 右下：状态信息（源、模式、频率）。
@@ -110,7 +113,7 @@
 ```css
 :root {
   --font-mono: "Cascadia Code", "SF Mono", "Fira Code", "Consolas", "Menlo", monospace;
-  --ui-edge: 28px;
+  --ui-edge: var(--sp-lg); /* = 16px */
   --c-bg: #000;
   --c-surface: #0a0a0a;
   --c-border: #2a2a2a;

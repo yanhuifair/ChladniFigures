@@ -31,6 +31,13 @@ export class AudioEngine {
     this.ctx = null;
     this.analyser = null;
     this.mode = "sim";
+    // 音源切换代际号：每次 setSource / shareSystemAudio 递增。
+    // 异步授权（getUserMedia/getDisplayMedia）迟到返回时据此判定「已被更新的选择覆盖」，
+    // 丢弃该流（stop tracks）并返回 "stale"，防止旧回调覆盖最新音源状态。
+    this._srcGen = 0;
+    // 当前接入 analyser 的 MediaStreamSource 节点（切源时需 disconnect，防 AudioNode 泄漏）
+    this._micSource = null;
+    this._sysSource = null;
 
     // 系统输入（麦克风等）/ 系统输出（屏幕共享捕获）音频流
     this.micStream = null;
@@ -125,10 +132,12 @@ export class AudioEngine {
     );
   }
 
-  // 切换音源：先停掉所有，再建立目标音源
+  // 切换音源：先停掉所有，再建立目标音源。
+  // 返回 true=成功 / false=失败（lastError 说明原因）/ "stale"=已被更新的切换覆盖（调用方勿更新状态）。
   async setSource(
     mode,
   ) {
+    const gen = ++this._srcGen;
     this.stopAll();
     this.mode = mode;
 
@@ -147,6 +156,14 @@ export class AudioEngine {
       );
       const ok =
         await this.startMic();
+      if (
+        gen !==
+        this._srcGen
+      ) {
+        // 授权期间用户已切到别的音源：停掉刚拿到的流，防止麦克风灯常亮
+        this.stopMic();
+        return "stale";
+      }
       return ok;
     } else if (
       mode ===
@@ -163,6 +180,13 @@ export class AudioEngine {
       );
       const ok =
         await this.startOutput();
+      if (
+        gen !==
+        this._srcGen
+      ) {
+        this.stopSystem();
+        return "stale";
+      }
       return ok;
     } else if (
       mode ===
@@ -180,6 +204,13 @@ export class AudioEngine {
       // 请求 MIDI 访问（点 MIDI 按钮本身是用户手势，可弹权限）
       const ok =
         await this.startMidi();
+      if (
+        gen !==
+        this._srcGen
+      ) {
+        this.stopMidi();
+        return "stale";
+      }
       // MIDI 同样用 SIM 振荡器发出对应频率的纯音（驱动板面振动）
       this.startSimTone();
       return ok;
@@ -197,8 +228,18 @@ export class AudioEngine {
       this._setAudible(
         false,
       );
+      // 复用当前代际号：shareSystemAudio 内部不再自行递增，避免双重计数
       const ok =
-        await this.shareSystemAudio();
+        await this.shareSystemAudio(
+          gen,
+        );
+      if (
+        gen !==
+        this._srcGen
+      ) {
+        this.stopAll();
+        return "stale";
+      }
       return ok;
     }
     // sim（及未知模式）：数值模拟，发出对应频率纯音
@@ -291,6 +332,7 @@ export class AudioEngine {
         this.ctx.createMediaStreamSource(
           this.micStream,
         );
+      this._micSource = source;
       source.connect(
         this.analyser,
       );
@@ -339,6 +381,17 @@ export class AudioEngine {
   }
 
   stopMic() {
+    if (
+      this._micSource
+    ) {
+      try {
+        this._micSource.disconnect();
+      } catch (
+        e
+      ) {}
+      this._micSource =
+        null;
+    }
     if (
       this.micStream
     ) {
@@ -440,11 +493,18 @@ export class AudioEngine {
   // 显式弹出"共享系统音频"请求（getDisplayMedia），
   // 跳过虚拟回环声卡直采。SHARE 按钮调用：无论是否检测到回环设备，
   // 都直接走屏幕共享兜底路径（含"分享系统音频"勾选提示）。
-  async shareSystemAudio() {
+  // gen 可选：由 setSource("share") 传入以共享同一代际号；独立调用（SHARE 按钮）
+  // 时内部自行递增。返回 true / false / "stale"（被更新的切换覆盖）。
+  async shareSystemAudio(
+    gen,
+  ) {
+    const g =
+      gen ??
+      ++this._srcGen;
     this.ensureContext();
     if (
       this.ctx.state ===
-        "suspended"
+      "suspended"
     )
       await this.ctx.resume();
     this._setAudible(
@@ -454,6 +514,14 @@ export class AudioEngine {
     this.outputMethod = "";
     const ok =
       await this.startSystem();
+    if (
+      g !==
+      this._srcGen
+    ) {
+      // 弹窗等待期间用户已切到别的音源：停掉刚共享的流（含视频轨）
+      this.stopSystem();
+      return "stale";
+    }
     if (
       ok
     ) {
@@ -543,15 +611,26 @@ export class AudioEngine {
         this.ctx.createMediaStreamSource(
           this.sysStream,
         );
+      this._sysSource = source;
       source.connect(
         this.analyser,
       );
       // 重置自适应增益，让新音源快速进入满动态
       this._resetAdaptiveGain();
-      // 用户点浏览器"停止共享"时通知上层切换 UI
-      audioTracks[0].addEventListener(
+      // 用户点浏览器"停止共享"时通知上层切换 UI。
+      // 只响应「当前这条流」的 ended：切源/旧授权停止时旧 track 也会触发
+      // ended，若不加守卫会把新建立的 sysStream 误清空（陈旧监听问题）。
+      const thisTrack =
+        audioTracks[0];
+      thisTrack.addEventListener(
         "ended",
         () => {
+          if (
+            this.sysStream &&
+            this.sysStream.getAudioTracks()[0] !==
+              thisTrack
+          )
+            return;
           this.sysStream =
             null;
           if (
@@ -580,6 +659,17 @@ export class AudioEngine {
   }
 
   stopSystem() {
+    if (
+      this._sysSource
+    ) {
+      try {
+        this._sysSource.disconnect();
+      } catch (
+        e
+      ) {}
+      this._sysSource =
+        null;
+    }
     if (
       this.sysStream
     ) {

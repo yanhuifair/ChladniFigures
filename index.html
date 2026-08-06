@@ -53,14 +53,14 @@
           </svg>
         </a>
       </div>
-      <div class="version-label" id="versionLabel">VERSION 2.9.15</div>
+      <div class="version-label" id="versionLabel">VERSION 2.10.0</div>
     </div>
 
     <!-- 右上角：保存当前图像为 PNG -->
     <button class="save-btn" id="saveBtn" data-i18n="save.image" data-i18n-attr="title:hint.save">SAVE IMAGE</button>
 
     <!-- 顶部中间：全屏显示（仅底板，无其它 UI；按 F 进入，ESC 退出） -->
-    <button class="fullscreen-btn" id="fullscreenBtn" data-i18n="btn.fullscreen" title="按 F 进入全屏，ESC 退出" data-i18n-attr="title:btn.fullscreenHint">FULLSCREEN</button>
+    <button class="fullscreen-btn" id="fullscreenBtn" data-i18n="btn.fullscreen" data-i18n-attr="title:btn.fullscreenHint">FULLSCREEN</button>
 
     <!-- 底部 UI：水平三段 -->
     <div class="bottom-bar" id="bottomBar">
@@ -92,7 +92,7 @@
         </div>
         <div class="midi-control hidden" id="midiControl">
           <div class="seg-subtitle" data-i18n="sub.midiInput">MIDI INPUT</div>
-          <div class="midi-status" id="midiStatus" data-i18n-attr="title:hint.midiInput">未连接</div>
+          <div class="midi-status" id="midiStatus" data-i18n="midi.disconnected" data-i18n-attr="title:hint.midiInput">Not connected</div>
         </div>
         <!-- 音量后期增强：始终显示，不依赖具体音源 -->
         <div class="vol-boost">
@@ -125,7 +125,7 @@
         </div>
         <div class="square-only" id="squareOnlyControls">
           <div class="particle-toggle">
-            <button class="particle-toggle-btn active" id="squareSignBtn" data-i18n-attr="title:hint.squareSign">SIGN: −</button>
+            <button class="particle-toggle-btn active" id="squareSignBtn" data-i18n="label.signMinus" data-i18n-attr="title:hint.squareSign">SIGN: −</button>
           </div>
         </div>
         <div class="param-grid">

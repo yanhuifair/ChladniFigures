@@ -80,7 +80,7 @@ fn projSeg(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> vec2<f32> {
   return vec2<f32>(ax + abx * t, ay + aby * t);
 }
 
-// 形状边界上离 (px,py) 最近的点（贴边堆积用）。几何须与 inShapeXY / JS 多边形一致。
+// 形状边界上离 (px,py) 最近的点（撞墙反弹：越界粒子投影回边界并反射速度）。几何须与 inShapeXY / JS 多边形一致。
 fn boundaryProject(px: f32, py: f32, shape: f32) -> vec2<f32> {
   if (shape < 0.5) {
     // 正方形：盒 [-1,1]^2 最近边界点
@@ -396,7 +396,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
       let wDown = min(1.0, glen * 0.25);
       var mx = dx * wDown + rx * (1.0 - wDown);
       var my = dy * wDown + ry * (1.0 - wDown);
-      let mlen = max(length(vec2<f32>(mx, my)), 1.0);
+      // 归一化为单位方向：除以真实长度（与 CPU 路径 particles.js 一致；
+      // 旧实现 max(len,1.0) 在 len<1 时方向不归一，抛速与 CPU 路径不同）。
+      // 零向量（wDown=0.5 且 dx,dy 恰与随机反向）视为无效，保持零向量。
+      var mlen = length(vec2<f32>(mx, my));
+      if (mlen < 1e-6) { mlen = 1.0; }
       mx = mx / mlen;
       my = my / mlen;
       let motionGain = u.motionGain;
@@ -449,7 +453,11 @@ const CLEAR_WGSL = `
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  atomicStore(&gridCount[gid.x], 0u);
+  // dispatch 线程数按 64 对齐会略多于 GRID_CELLS，越界线程必须跳过
+  //（否则 atomicStore 越界写，属依赖实现的未定义行为）
+  if (gid.x < ${GRID_CELLS}u) {
+    atomicStore(&gridCount[gid.x], 0u);
+  }
 }
 `;
 

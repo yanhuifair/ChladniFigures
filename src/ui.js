@@ -20,6 +20,7 @@ const SOURCE_KEYS = {
   output: "src.output",
   sim: "src.simulation",
   midi: "src.midi",
+  share: "src.share",
 };
 
 export function setupUI(
@@ -738,16 +739,18 @@ export function setupUI(
         state.plateShape !==
           "square",
       );
-    // 符号按钮显示当前符号
+    // 符号按钮显示当前符号（走 i18n，随语言切换）
     if (
       squareSignBtn
     )
       _set(
         squareSignBtn,
         "signTxt",
-        state.squareSign >= 0
-          ? "SIGN: +"
-          : "SIGN: −",
+        t(
+          state.squareSign >= 0
+            ? "label.signPlus"
+            : "label.signMinus",
+        ),
       );
     // 音源显示名：随浏览器语言切换
     _set(

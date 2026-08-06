@@ -135,6 +135,9 @@ const DICT = {
     "label.particles": "PARTICLES",
     "label.simSound": "SIMULATION SOUND",
     "label.collision": "COLLISION",
+    // 方板简并模态符号（SIGN 为专有名词，中英一致；符号通用）
+    "label.signPlus": "SIGN: +",
+    "label.signMinus": "SIGN: −",
     "toggle.on": "{label}: ON",
     "toggle.off": "{label}: OFF",
     // MIDI 状态
@@ -265,6 +268,9 @@ const DICT = {
     "label.particles": "粒子",
     "label.simSound": "模拟声音",
     "label.collision": "碰撞",
+    // 方板简并模态符号（SIGN 为专有名词，中英一致；符号通用）
+    "label.signPlus": "SIGN: +",
+    "label.signMinus": "SIGN: −",
     "toggle.on": "{label}：开",
     "toggle.off": "{label}：关",
     "midi.unavailable": "MIDI 不可用",

@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.9.15";
+const APP_VERSION = "2.10.0";
 
 // --- 全局状态 ---
 const state = {
@@ -70,7 +70,6 @@ const state = {
   desiredM: 3, // 频谱连续目标值（仅用于带滞回的整数量化）
   desiredN: 4,
 
-  selectedMode: "auto",
   audioSource: "sim",
   plateShape: "square", // 底板形状：square / circle / triangle / hexagon
 
@@ -101,7 +100,6 @@ const state = {
   vibrationAmplitude: 0,
   vibrationFreq: 0, // 底板实际振动频率（由当前模式 + 尺寸 + 硬度推导，Hz）
   vibRate: 1, // 振动频率→跳动节律因子（硬度↑→>1，沙粒被抛起更频繁）
-  simTime: 0, // 模拟累计时间（驱动板面周期性震动，频率随硬度变化）
   modeKickEnergy: 0,
   volumeLevel: 0, // 真实响度（0~1）：驱动整体运动强度，音量越大图形移动越剧烈
   volGain: 1, // 音量后期增强（0.1~10）：只放大增幅（抛速/弹起高度），不影响振动频率/抛起频次
@@ -313,8 +311,18 @@ async function tryStartParticleWorker() {
     return null;
   }
 
-  const off =
-    glCanvas.transferControlToOffscreen();
+  // 转移画布控制权到 Worker。若这里抛异常（例如画布已被占用/转移），
+  // 视为 Worker 路径不可用，主线程继续用原画布走同线程回退。
+  let off = null;
+  try {
+    off =
+      glCanvas.transferControlToOffscreen();
+  } catch (
+    e
+  ) {
+    w.terminate();
+    return null;
+  }
   const ready =
     await ask(
       {
@@ -322,8 +330,24 @@ async function tryStartParticleWorker() {
         canvas: off,
         count:
           NUM_PARTICLES,
-        W: window.innerWidth,
-        H: window.innerHeight,
+        W: Math.round(
+          window.innerWidth *
+            clamp(
+              window.devicePixelRatio ||
+                1,
+              1,
+              2,
+            ),
+        ),
+        H: Math.round(
+          window.innerHeight *
+            clamp(
+              window.devicePixelRatio ||
+                1,
+              1,
+              2,
+            ),
+        ),
         plateSize: 1,
       },
       [
@@ -336,6 +360,8 @@ async function tryStartParticleWorker() {
     !ready ||
     !ready.ok
   ) {
+    // init 失败：画布控制权已转移无法收回，主线程同线程路径将因
+    // glCanvas 拿不到上下文而降级到 CPU 2D 渲染（功能可用，性能次之）。
     w.terminate();
     return null;
   }
@@ -391,13 +417,30 @@ const renderer = new Renderer(
 let ui = null;
 
 // --- 尺寸与板布局 ---
+// DPR（设备像素比）：canvas 物理分辨率 = CSS 像素 × dpr，消除 Retina 屏发糊；
+// 上限 2 防止超大屏 4× 像素量压垮粒子渲染。所有布局量（底板尺寸/坐标/边距）
+// 均以物理像素为准，各渲染层收到同一套物理像素值。
 function resize() {
+  const dpr =
+    clamp(
+      window.devicePixelRatio ||
+        1,
+      1,
+      2,
+    );
+  state.dpr = dpr;
   state.W =
     canvas.width =
-      window.innerWidth;
+      Math.round(
+        window.innerWidth *
+          dpr,
+      );
   state.H =
     canvas.height =
-      window.innerHeight;
+      Math.round(
+        window.innerHeight *
+          dpr,
+      );
   // 底板：保持正方形，尺寸/位置随网页与底栏自适应。
   // 设计目标：边距尽量为 160；尽量四边等宽。
   //   矩形窗口下无法让四条边距绝对相等，只能用「左右相等、上下相等」的
@@ -409,16 +452,21 @@ function resize() {
   // 底板尺寸必须整数：离屏缓冲 createImageData 向下取整，而粒子写入
   // 以 plateSize 作行跨距；小数会导致跨距与实际行宽不符（对角亮线 stride bug）。
   // 移动端竖屏：取消 160 大边距，让底板占满网页宽度（仅留极小留白）。
+  // 注：媒体查询/竖屏判断用 CSS 像素（window.innerWidth），TARGET 等布局量转物理像素。
   const isMobilePortrait =
     !state.fullscreen &&
-    state.W <= 768 &&
-    state.H > state.W;
+    window.innerWidth <= 768 &&
+    window.innerHeight >
+      window.innerWidth;
   const TARGET = state.fullscreen
     ? 0 // 全屏：无边距，底板铺满窗口
     : isMobilePortrait
       ? 4 // 移动端竖屏：极小边距，底板占满网页宽度
       : 160; // 桌面 / 横屏目标边距（尽量 160）
-  const MIN_PLATE = 64; // 底板最小边长保护
+  const TARGET_PX =
+    TARGET * dpr;
+  const MIN_PLATE =
+    64 * dpr; // 底板最小边长保护（物理像素）
   const bar =
     document.getElementById(
       "bottomBar",
@@ -429,7 +477,8 @@ function resize() {
       : bar
         ? Math.ceil(
             bar.getBoundingClientRect()
-              .height,
+              .height *
+              dpr,
           )
         : 0;
   const availW =
@@ -438,12 +487,12 @@ function resize() {
     state.H - barH; // 底板只能落在三段式底栏之上
   let size =
     Math.min(
-      availW - 2 * TARGET,
+      availW - 2 * TARGET_PX,
       // 移动端竖屏：底板顶对齐（仅留极小上边距），高度约束用整段 availH，
       // 让底板按宽度取正方形、紧贴底栏，消除上下大留白。
       isMobilePortrait
         ? availH
-        : availH - 2 * TARGET,
+        : availH - 2 * TARGET_PX,
     );
   if (
     size <
@@ -472,7 +521,7 @@ function resize() {
     );
   state.plateY =
     isMobilePortrait
-      ? TARGET // 移动端竖屏：顶对齐，消除上方留白
+      ? TARGET_PX // 移动端竖屏：顶对齐，消除上方留白
       : Math.floor(
           (availH - size) /
             2,
@@ -570,7 +619,7 @@ function loadPreferences() {
         )
           ? clamp(
               p.simFreq,
-              20,
+              1,
               50000,
             )
           : 440,
@@ -584,6 +633,11 @@ function loadPreferences() {
         "boolean"
           ? p.simSound
           : true,
+      collision:
+        typeof p.collision ===
+        "boolean"
+          ? p.collision
+          : false,
       showPattern:
         typeof p.showPattern ===
         "boolean"
@@ -664,34 +718,21 @@ function savePreferences() {
       STORAGE_KEY,
       JSON.stringify(
         {
-          audioSource:
-            state.audioSource,
-          plateShape:
-            state.plateShape,
-          squareSign:
-            state.squareSign,
-          simFreq:
-            state.simFreq,
-          showParticles:
-            state.showParticles,
-          showPattern:
-            state.showPattern,
-          simSound:
-            state.simSound,
-          particleCount:
-            state.particleCount,
-            plateCm:
-              state.plateCm,
-            plateStiffness:
-              state.plateStiffness,
-            grainMm:
-              state.grainMm,
-            volGain:
-              state.volGain,
-            micDeviceId:
-            engine.micDeviceId,
-          outputDeviceId:
-            engine.outputDeviceId,
+          audioSource: state.audioSource,
+          plateShape: state.plateShape,
+          squareSign: state.squareSign,
+          simFreq: state.simFreq,
+          showParticles: state.showParticles,
+          showPattern: state.showPattern,
+          simSound: state.simSound,
+          collision: state.collision,
+          particleCount: state.particleCount,
+          plateCm: state.plateCm,
+          plateStiffness: state.plateStiffness,
+          grainMm: state.grainMm,
+          volGain: state.volGain,
+          micDeviceId: engine.micDeviceId,
+          outputDeviceId: engine.outputDeviceId,
         },
       ),
     );
@@ -705,9 +746,13 @@ async function onSelectSource(
   mode,
 ) {
   let ok = true;
+  // 用 engine.mode（而非 state.audioSource）作守卫：
+  // 若仅比较 state.audioSource，快速连点（前一次 setSource 尚未返回时）
+  // 第二次点击会因 state 未更新而被吞掉。engine.mode 在 setSource 开头
+  // 即更新为目标源，能正确放行飞行中的第二次切换。
   if (
     mode !==
-    state.audioSource
+    engine.mode
   ) {
     const prev =
       state.audioSource;
@@ -715,6 +760,14 @@ async function onSelectSource(
       await engine.setSource(
         mode,
       );
+    if (
+      ok ===
+      "stale"
+    ) {
+      // 授权期间用户已切到更新的音源：本次切换作废，
+      // 不更新状态、不回退、不提示（最新选择由另一处 handler 负责）。
+      return false;
+    }
     if (
       !ok
     ) {
@@ -817,6 +870,13 @@ async function onSelectSource(
 async function onShareSystem() {
   const ok =
     await engine.shareSystemAudio();
+  if (
+    ok ===
+    "stale"
+  ) {
+    // 弹窗等待期间用户已切到别的音源：本次共享作废，不更新状态
+    return false;
+  }
   if (
     !ok
   ) {
@@ -1354,7 +1414,6 @@ function animate(
       : 0.016;
   lastTime = timestamp;
   state._dt = dt;
-  state.simTime += dt;
 
   // 物理尺度：屏幕像素 ↔ 真实 cm，推导沙粒渲染像素尺寸。
   // 注意：grainPx 保持浮点数、不在此处取整——全局取整会让全体沙粒在
@@ -1565,6 +1624,17 @@ function animate(
           ),
     ),
     plateLimit: 0.97,
+    // 碰撞半径：跟随实际显示沙粒尺寸（归一化视觉半径 grainPx/plateSize，
+    // 封顶 COLLIDE_R 保证网格 cell 覆盖，下限防 0）——与 WebGPU 路径同公式，
+    // CPU 路径据此获得一致的碰撞手感。
+    collideR: Math.max(
+      0.0004,
+      Math.min(
+        state.grainPx /
+          state.plateSize,
+        0.006,
+      ),
+    ),
     // 震源在中间：板心激励最强、向四周传播衰减
     excAt: centerExcitation,
     // 振动频率节律因子（硬度↑→跳动更快）：让"底板震动频率"可感知
@@ -1698,6 +1768,8 @@ function animate(
           motionGain:
             field.motionGain,
           plateLimit: 0.97,
+          collideR:
+            field.collideR,
           prevM:
             state.prevM,
           prevN:
@@ -1964,6 +2036,8 @@ function init() {
       saved.showPattern;
     state.simSound =
       saved.simSound;
+    state.collision =
+      saved.collision;
     state.particleCount =
       saved.particleCount;
     state.plateCm =
@@ -1980,10 +2054,6 @@ function init() {
     engine.outputDeviceId =
       saved.outputDeviceId;
   }
-  // 网格恒为自动
-  state.selectedMode =
-    "auto";
-
   resize();
   particles.setCount(
     state.particleCount,

@@ -260,6 +260,12 @@ export class ParticleSystem {
     const vibRate =
       field.vibRate ||
       1;
+    // 碰撞半径：优先用主线程传入的动态值（跟随实际显示沙粒尺寸，
+    // 与 WebGPU 路径一致），否则回退固定基准 COLLIDE_R。
+    const collideR =
+      field.collideR > 0
+        ? field.collideR
+        : COLLIDE_R;
 
     // 每帧预计算波场粗网格（见文件顶部 _buildFieldGrid）：把逐粒 trig 换成网格采样
     _buildFieldGrid(
@@ -757,7 +763,7 @@ export class ParticleSystem {
               const pi =
                 ps[i];
               const ri =
-                COLLIDE_R *
+                collideR *
                 pi.sizeF;
               for (
                 let b = 0;
@@ -774,7 +780,7 @@ export class ParticleSystem {
                 const pj =
                   ps[j];
                 const rj =
-                  COLLIDE_R *
+                  collideR *
                   pj.sizeF;
                 let dx =
                   pi.x -
@@ -852,7 +858,7 @@ export class ParticleSystem {
     // 碰撞后颗粒基本不重叠，直接数"重叠"会漏掉紧贴的邻居；
     // 故把统计半径放大到 ~COLLIDE_DENS_MULT×，才能捕捉到真实的堆积密度。
     const densR =
-      COLLIDE_R *
+      collideR *
       COLLIDE_DENS_MULT;
     for (
       let gy = 0;

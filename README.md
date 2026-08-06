@@ -116,6 +116,12 @@ npm start
   the inter-grain collision separately. COLLISION enables short-range repulsion
   so grains cannot overlap and pile into bands of finite width along the nodal
   lines.
+- **PLATE SHAPE**: SQUARE / CIRCLE / TRIANGLE / HEXAGON — switches the plate
+  outline and its modal field (square & circle follow physical eigenmode models;
+  triangle & hexagon are Dₙ-symmetric art approximations).
+- **SIGN** (square only): switches between the two degenerate (m,n)/(n,m)
+  superpositions — minus (classic X-shaped nodal diagonal) and plus (cross +
+  corner arcs); both are physically realizable patterns.
 - **SAND GRAINS**: number of particles (100–100 000).
 - **SAND GRAIN**: grain diameter in mm (visual size).
 - **STIFFNESS**: plate stiffness coefficient (relative to 1.0; ∝ √E).

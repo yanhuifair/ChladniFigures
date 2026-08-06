@@ -56,6 +56,7 @@ const field = {
   treble: 0,
   kick: 0,
   plateLimit: 0.97,
+  collideR: 0.006,
   // 震源在中间：板心激励最强、向四周传播衰减
   excAt: centerExcitation,
   vibRate: 1,
@@ -168,6 +169,7 @@ self.onmessage = (e) => {
       field.vibRate = msg.vibRate;
       field.motionGain = msg.motionGain;
       field.plateLimit = msg.plateLimit;
+      field.collideR = msg.collideR > 0 ? msg.collideR : 0.006;
 
       sys.update(msg.dt, field, msg.collision);
 
