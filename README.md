@@ -128,7 +128,7 @@ npm start
 - **PLATE SIDE**: plate side length in cm (visual scale).
 - **FULLSCREEN**: hide all UI and fill the window with the plate (press `F` to
   enter, `ESC` to exit).
-- **SAVE IMAGE**: download the current view as a PNG.
+- **SAVE IMAGE**: download the current view as a PNG (press `S` anywhere).
 - **MODE** (top-right readout): shows the current pattern `m×n`.
 - The figure always follows the spectrum/frequency in real time (AUTO); manual
   mode selection has been removed.

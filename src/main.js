@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.10.1";
+const APP_VERSION = "2.10.2";
 
 // --- 全局状态 ---
 const state = {
@@ -1830,7 +1830,15 @@ function animate(
 // 粒子层读回：WebGPU 路径从离屏残影纹理显式拷贝（可靠，见 readSnapshot）；
 // WebGL2/Worker 路径 drawImage(glCanvas)（preserveDrawingBuffer 已开启）。
 // 两路画布都是整窗尺寸，按 (plateX,plateY,plateSize) 裁剪出板区域即可。
+// 防重入锁：S 键/按钮连按不并发保存（toBlob 为异步回调）。
+let saveSnapshotBusy = false;
+
 async function saveSnapshot() {
+  if (
+    saveSnapshotBusy
+  )
+    return;
+  saveSnapshotBusy = true;
   const W =
     state.W;
   const H =
@@ -2004,6 +2012,8 @@ async function saveSnapshot() {
       if (
         !blob
       ) {
+        saveSnapshotBusy =
+          false;
         if (
           ui
         )
@@ -2047,6 +2057,8 @@ async function saveSnapshot() {
             },
           ),
         );
+      saveSnapshotBusy =
+        false;
     },
     "image/png",
   );
@@ -2346,6 +2358,19 @@ function init() {
         e.altKey
       )
         return;
+      // 输入控件聚焦时不触发字母快捷键（select 的字母跳转/输入框输入不受干扰）
+      const t =
+        e.target;
+      if (
+        t &&
+        (t.tagName ===
+            "INPUT" ||
+          t.tagName ===
+            "SELECT" ||
+          t.tagName ===
+            "TEXTAREA")
+      )
+        return;
       if (
         e.key ===
           "Escape" &&
@@ -2365,6 +2390,15 @@ function init() {
         setFullscreen(
           !state.fullscreen,
         );
+      } else if (
+        e.key ===
+          "s" ||
+        e.key ===
+          "S"
+      ) {
+        // S 键保存当前画面为 PNG（与 SAVE IMAGE 按钮同路径）
+        e.preventDefault();
+        saveSnapshot();
       }
     },
   );

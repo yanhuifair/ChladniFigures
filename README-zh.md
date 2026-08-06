@@ -108,7 +108,7 @@ npm start
 - **STIFFNESS**：底板硬度系数（相对基准 1.0；∝ √E）。
 - **PLATE SIDE**：底板边长（cm，视觉比例）。
 - **FULLSCREEN**：隐藏全部 UI 让底板铺满窗口（按 `F` 进入，按 `ESC` 退出）。
-- **SAVE IMAGE**：把当前画面下载为 PNG。
+- **SAVE IMAGE**：把当前画面下载为 PNG（任意位置按 `S` 键）。
 - **MODE**（右上读数）：显示当前图案 `m×n`。
 - 图形始终实时跟随频谱/频率（AUTO）；已移除手动模式选择。
 
