@@ -216,6 +216,9 @@ export class GLPlateRenderer {
         premultipliedAlpha: false,
         antialias: false,
         depth: false,
+        // 保留绘制缓冲：SAVE IMAGE 需 drawImage(plateCanvas) 读回节线层，
+        // 不开启则 present 后缓冲被清除，读回全黑（页面显示不受影响）。
+        preserveDrawingBuffer: true,
       },
     );
     if (

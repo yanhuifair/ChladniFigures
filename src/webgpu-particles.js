@@ -1213,7 +1213,9 @@ export class WebGPUParticleSystem {
           format: this.format,
           usage:
             GPUTextureUsage.RENDER_ATTACHMENT |
-            GPUTextureUsage.TEXTURE_BINDING,
+            GPUTextureUsage.TEXTURE_BINDING |
+            // COPY_SRC：SAVE IMAGE 时从残影纹理读回粒子像素（见 readSnapshot）
+            GPUTextureUsage.COPY_SRC,
         },
       );
       this.trailView = this.trailTex.createView();
@@ -1741,6 +1743,97 @@ export class WebGPUParticleSystem {
         enc.finish(),
       ],
     );
+  }
+
+  // 读回当前粒子层像素（SAVE IMAGE 用）。
+  // 不依赖 drawImage(glCanvas) 读回：WebGPU 交换链纹理内容在 present 后
+  // 不保证保留（无 preserveDrawingBuffer 等效），而残影纹理 trailTex 是
+  // 离屏累积层、内容确定存在。从它 copyTextureToBuffer 读回，可靠。
+  // 返回 { data: Uint8ClampedArray(RGBA, 预乘), width, height } 或 null。
+  async readSnapshot() {
+    if (
+      !this.ok ||
+      !this.trailTex ||
+      !this.W ||
+      !this.H
+    )
+      return null;
+    const dev = this.device;
+    const w = this.W;
+    const h = this.H;
+    const bytesPerRow =
+      Math.ceil(
+        (w * 4) / 256,
+      ) *
+      256;
+    const buf =
+      dev.createBuffer(
+        {
+          size:
+            bytesPerRow *
+            h,
+          usage:
+            GPUBufferUsage.COPY_DST |
+            GPUBufferUsage.MAP_READ,
+        },
+      );
+    const enc =
+      dev.createCommandEncoder();
+    enc.copyTextureToBuffer(
+      {
+        texture:
+          this.trailTex,
+      },
+      {
+        buffer: buf,
+        bytesPerRow,
+      },
+      {
+        width: w,
+        height: h,
+      },
+    );
+    dev.queue.submit(
+      [
+        enc.finish(),
+      ],
+    );
+    await buf.mapAsync(
+      GPUMapMode.READ,
+    );
+    const src =
+      new Uint8Array(
+        buf.getMappedRange(),
+      );
+    const out =
+      new Uint8ClampedArray(
+        w * h * 4,
+      );
+    // 去掉行对齐填充，紧凑排列 RGBA
+    for (
+      let y = 0;
+      y < h;
+      y++
+    ) {
+      out.set(
+        src.subarray(
+          y *
+            bytesPerRow,
+          y *
+            bytesPerRow +
+            w *
+              4,
+        ),
+        y * w * 4,
+      );
+    }
+    buf.unmap();
+    buf.destroy();
+    return {
+      data: out,
+      width: w,
+      height: h,
+    };
   }
 }
 

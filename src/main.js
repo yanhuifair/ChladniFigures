@@ -49,7 +49,7 @@ import {
 } from "./i18n.js";
 
 // 应用版本号（与 package.json 保持一致），显示在 INFO 板块底部
-const APP_VERSION = "2.10.0";
+const APP_VERSION = "2.10.1";
 
 // --- 全局状态 ---
 const state = {
@@ -1826,10 +1826,11 @@ function animate(
 // --- 保存当前画面为 PNG ---
 // 只导出底板（正方形克拉尼板 + 沙粒），不导出整窗空白边距，也不含 HTML 界面。
 // 合成顺序：先画 2D 主画布（黑板 + 节线纹理 + CPU 路径沙粒），
-// 再叠加 WebGL 沙粒层（透明背景）。preserveDrawingBuffer 已开启，
-// 故 glCanvas 当前帧可随时被 drawImage 读回。
+// 再叠加 WebGL 底板+节线层，最后叠加粒子层。
+// 粒子层读回：WebGPU 路径从离屏残影纹理显式拷贝（可靠，见 readSnapshot）；
+// WebGL2/Worker 路径 drawImage(glCanvas)（preserveDrawingBuffer 已开启）。
 // 两路画布都是整窗尺寸，按 (plateX,plateY,plateSize) 裁剪出板区域即可。
-function saveSnapshot() {
+async function saveSnapshot() {
   const W =
     state.W;
   const H =
@@ -1888,13 +1889,67 @@ function saveSnapshot() {
       size,
     );
   }
-  // WebGL/WebGPU 沙粒层（透明叠加）；CPU 降级路径沙粒已在主画布内，无需重复。
-  // Worker 模式下 #glcanvas 是「占位画布」（真实绘制在 OffscreenCanvas 里），
-  // 规范允许把它当作图像源读回；个别浏览器若不支持则跳过沙粒层而非整体失败。
+  // 粒子层：WebGPU 路径显式读回离屏残影纹理（画布交换链内容 present 后
+  // 不保证保留，drawImage 读回不可靠）；WebGL2/Worker 路径 drawImage 读回
+  //（render-gl 已开 preserveDrawingBuffer，Worker 内同源缓冲）。
+  // CPU 降级路径沙粒已在主画布内，无需重复。
   if (
+    gpuParticles &&
+    gpuParticles.ready
+  ) {
+    try {
+      const snap =
+        await gpuParticles.readSnapshot();
+      if (
+        snap &&
+        snap.data
+      ) {
+        const tmp =
+          document.createElement(
+            "canvas",
+          );
+        tmp.width =
+          snap.width;
+        tmp.height =
+          snap.height;
+        const tctx =
+          tmp.getContext(
+            "2d",
+          );
+        const img =
+          tctx.createImageData(
+            snap.width,
+            snap.height,
+          );
+        img.data.set(
+          snap.data,
+        );
+        tctx.putImageData(
+          img,
+          0,
+          0,
+        );
+        octx.drawImage(
+          tmp,
+          ox,
+          oy,
+          size,
+          size,
+          0,
+          0,
+          size,
+          size,
+        );
+      }
+    } catch (e) {
+      console.warn(
+        "WebGPU 粒子读回失败，本次快照只含底板：",
+        e,
+      );
+    }
+  } else if (
     (glParticles &&
       glParticles.ok) ||
-    gpuParticles ||
     particleWorker
   ) {
     try {
